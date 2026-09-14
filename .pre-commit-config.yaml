@@ -5,7 +5,6 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
-      - id: check-added-large-files
 
   - repo: local
     hooks:
@@ -23,9 +22,8 @@ repos:
         types: [go]
         pass_filenames: true
 
-      - id: frontend-lint
-        name: frontend lint
-        entry: bash -c 'cd frontend && pnpm lint:all'
+      - id: shellcheck
+        name: shellcheck
+        entry: shellcheck
         language: system
-        files: ^frontend/
-        pass_filenames: false
+        files: ^internal/installer/node\.sh$

@@ -1,55 +1,18 @@
 # Binaries
-/outless
-outless-linux-*
-outless_*
-*.exe
-*.dll
-*.so
-*.dylib
+/volok
+volok-linux-*
+dist/
 
-# OpenWrt packages
-*.ipk
+# Runtime state (contains secrets)
+volok.json
+*.lock
 
-# Test and build artifacts
+# Dev and editor files
+.devin/
+.idea/
+.vscode/
+
+# Test artifacts
 *.test
 *.out
-vendor/
-dist/
-dist_frontend/
-build/
 tmp/
-
-/private/
-
-# SQLite databases
-*.db
-*.db-shm
-*.db-wal
-
-# Environment variables
-.env
-.env.local
-.env.*
-
-# Runtime config (contains secrets, use config.yaml.example as template)
-config.yaml
-
-# IDE
-.idea/
-
-# Devin agent files
-.devin/
-
-# Private scripts (sensitive IPs, credentials, etc.)
-scripts/private/
-
-# Frontend
-frontend/node_modules/
-frontend/.nuxt/
-frontend/.output/
-frontend/dist/
-frontend/dist
-
-# Cache directories
-.cache/
-

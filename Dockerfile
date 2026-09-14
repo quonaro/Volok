@@ -1,32 +1,22 @@
 # syntax=docker/dockerfile:1
 
-# Stage 1: Build frontend
-FROM node:22-alpine AS frontend
-WORKDIR /frontend
-RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
-COPY frontend/package.json frontend/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
-COPY frontend/ .
-RUN pnpm generate
-
-# Stage 2: Build Go binary
-FROM golang:1.26-alpine AS builder
+# Stage 1: Build Go binary
+FROM golang:1.27-alpine AS builder
 ENV GOPROXY=https://proxy.golang.org,direct
 RUN apk add --no-cache ca-certificates git
 WORKDIR /build
-COPY go.mod go.sum ./
+COPY go.mod ./
 RUN go mod download
 COPY . .
-COPY --from=frontend /frontend/.output/public /build/web/dist
 ARG VERSION
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} GOARM=${TARGETVARIANT#v} \
-    go build -trimpath -tags "with_reality_server with_utls" \
-    -ldflags="-s -w -X main.version=${VERSION}" -o outless ./cmd/outless
+    go build -trimpath -ldflags="-s -w -X volok/internal/cli.version=${VERSION}" \
+    -o volok ./cmd/volok
 
-# Stage 3: Minimal scratch image
+# Stage 2: Minimal runtime image
 FROM scratch
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder /build/outless /outless
-EXPOSE 41220
-ENTRYPOINT ["/outless"]
-CMD ["server", "run"]
+COPY --from=builder /build/volok /volok
+VOLUME ["/etc/volok"]
+ENTRYPOINT ["/volok", "--file", "/etc/volok/volok.json"]
+CMD ["serve"]

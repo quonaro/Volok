@@ -1,0 +1,14 @@
+[Unit]
+Description=Volok VLESS node library
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/volok --file /etc/volok/volok.json serve
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -6,11 +6,11 @@ testdata_dir = "testdata"
 tmp_dir = "tmp"
 
 [build]
-args_bin = ["server", "run"]
+args_bin = ["--file", "./volok.json", "serve"]
 entrypoint = ["./tmp/main"]
-cmd = "CGO_ENABLED=0 go build -trimpath -tags \"with_reality_server with_utls\" -ldflags='-s -w' -o ./tmp/main ./cmd/outless"
+cmd = "CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o ./tmp/main ./cmd/volok"
 delay = 1000
-exclude_dir = ["assets", "tmp", "vendor", "testdata", "frontend", "web/dist"]
+exclude_dir = ["assets", "tmp", "vendor", "testdata", ".devin"]
 exclude_file = []
 exclude_regex = ["_test.go"]
 exclude_unchanged = false
@@ -18,7 +18,7 @@ follow_symlink = false
 full_bin = ""
 ignore_dangerous_root_dir = false
 include_dir = []
-include_ext = ["go", "tpl", "tmpl", "html"]
+include_ext = ["go", "sh"]
 include_file = []
 kill_delay = "500ms"
 log = "build-errors.log"

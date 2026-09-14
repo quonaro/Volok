@@ -2,46 +2,42 @@ name: Release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*"
+  pull_request:
 
 permissions:
   contents: write
   packages: write
 
 jobs:
-  docker:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          platforms: linux/amd64
-          tags: |
-            ghcr.io/quonaro/outless:${{ github.ref_name }}
-            ghcr.io/quonaro/outless:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            VERSION=${{ github.sha }}
+          go-version-file: go.mod
+          cache: true
+      - name: Go tests
+        run: go test ./...
+      - name: Go vet
+        run: go vet ./...
+      - name: Install shellcheck
+        run: sudo apt-get update -y && sudo apt-get install -y shellcheck
+      - name: Installer syntax check
+        run: bash -n internal/installer/node.sh && shellcheck internal/installer/node.sh
 
   binaries:
     runs-on: ubuntu-latest
+    needs: verify
+    if: startsWith(github.ref, 'refs/tags/v')
     env:
       GOPROXY: https://proxy.golang.org,direct
-      GO_TAGS: with_reality_server with_utls
       GO_LDFLAGS: -s -w
     steps:
       - name: Checkout
@@ -51,50 +47,30 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.0
-          run_install: false
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
-      - name: Install and build frontend
-        run: |
-          cd frontend
-          pnpm install --frozen-lockfile
-          pnpm generate
-      - name: Stage web assets
-        run: |
-          rm -rf web/dist
-          mkdir -p web/dist
-          cp -r frontend/.output/public/. web/dist/
       - name: Get short SHA
         id: vars
-        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
       - name: Build binaries
         run: |
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-            go build -trimpath -tags "$GO_TAGS" -ldflags="$GO_LDFLAGS -X main.version=${{ steps.vars.outputs.sha_short }}" \
-            -o outless-linux-amd64 ./cmd/outless
+            go build -trimpath -ldflags="$GO_LDFLAGS -X volok/internal/cli.version=${{ steps.vars.outputs.sha_short }}" \
+            -o volok-linux-amd64 ./cmd/volok
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
-            go build -trimpath -tags "$GO_TAGS" -ldflags="$GO_LDFLAGS -X main.version=${{ steps.vars.outputs.sha_short }}" \
-            -o outless-linux-arm64 ./cmd/outless
+            go build -trimpath -ldflags="$GO_LDFLAGS -X volok/internal/cli.version=${{ steps.vars.outputs.sha_short }}" \
+            -o volok-linux-arm64 ./cmd/volok
           CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 \
-            go build -trimpath -tags "$GO_TAGS" -ldflags="$GO_LDFLAGS -X main.version=${{ steps.vars.outputs.sha_short }}" \
-            -o outless-linux-armv7 ./cmd/outless
+            go build -trimpath -ldflags="$GO_LDFLAGS -X volok/internal/cli.version=${{ steps.vars.outputs.sha_short }}" \
+            -o volok-linux-armv7 ./cmd/volok
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
           name: binaries
-          path: outless-linux-*
+          path: volok-linux-*
 
   ipk:
     runs-on: ubuntu-latest
     needs: binaries
+    if: startsWith(github.ref, 'refs/tags/v')
     env:
       GOPROXY: https://proxy.golang.org,direct
       SDK_URL: https://downloads.openwrt.org/releases/23.05.4/targets/mediatek/mt7622/openwrt-sdk-23.05.4-mediatek-mt7622_gcc-12.3.0_musl.Linux-x86_64.tar.xz
@@ -115,46 +91,44 @@ jobs:
       - name: Download and extract SDK
         if: steps.sdk-cache.outputs.cache-hit != 'true'
         run: |
-          SDK_TARBALL=/tmp/openwrt-sdk.tar.xz
-          echo "Downloading SDK..."
-          wget -q -O "$SDK_TARBALL" "$SDK_URL" || curl -L -o "$SDK_TARBALL" "$SDK_URL"
-          echo "Extracting SDK..."
           mkdir -p "$SDK_DIR"
-          tar xf "$SDK_TARBALL" -C "$SDK_DIR" --strip-components=1
-          rm -f "$SDK_TARBALL"
+          wget -q -O /tmp/openwrt-sdk.tar.xz "$SDK_URL" || curl -L -o /tmp/openwrt-sdk.tar.xz "$SDK_URL"
+          tar xf /tmp/openwrt-sdk.tar.xz -C "$SDK_DIR" --strip-components=1
       - name: Prepare package
         run: |
-          mkdir -p "$SDK_DIR/package/outless"
-          cp outless-linux-arm64 "$SDK_DIR/package/outless/outless"
-          cp -r deploy/openwrt/files "$SDK_DIR/package/outless/"
-          cp deploy/openwrt/Makefile "$SDK_DIR/package/outless/"
-      - name: Patch Makefile version and URL
+          mkdir -p "$SDK_DIR/package/volok"
+          cp volok-linux-arm64 "$SDK_DIR/package/volok/volok"
+          cp -r deploy/openwrt/files "$SDK_DIR/package/volok/"
+          cp deploy/openwrt/Makefile "$SDK_DIR/package/volok/"
+          # Keep the packaged init script identical to the embedded asset.
+          cp internal/cli/assets/volok.init "$SDK_DIR/package/volok/files/volok.init"
+      - name: Patch Makefile version
         run: |
           VER="${GITHUB_REF_NAME#v}"
-          sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=$VER/" "$SDK_DIR/package/outless/Makefile"
-          sed -i 's|^URL:=https://github.com/OutVless/Outless|URL:=https://github.com/quonaro/Outless|' "$SDK_DIR/package/outless/Makefile"
+          sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=$VER/" "$SDK_DIR/package/volok/Makefile"
       - name: Build IPK
         run: |
           cd "$SDK_DIR"
           make defconfig
-          make package/outless/compile -j$(nproc)
+          make package/volok/compile -j$(nproc)
       - name: Collect IPK
         run: |
-          IPK_PATH=$(find "$SDK_DIR/bin/packages" -name "outless_*.ipk" | head -n1)
+          IPK_PATH=$(find "$SDK_DIR/bin/packages" -name "volok_*.ipk" | head -n1)
           if [ -z "$IPK_PATH" ]; then
             echo "ERROR: .ipk not found after build"
             exit 1
           fi
-          cp "$IPK_PATH" ./outless.ipk
+          cp "$IPK_PATH" ./volok.ipk
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
           name: ipk
-          path: ./outless.ipk
+          path: ./volok.ipk
 
   release:
     runs-on: ubuntu-latest
     needs: [binaries, ipk]
+    if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Download binaries
         uses: actions/download-artifact@v4
@@ -173,7 +147,7 @@ jobs:
           name: ${{ github.ref_name }}
           generate_release_notes: true
           files: |
-            binaries/outless-linux-amd64
-            binaries/outless-linux-arm64
-            binaries/outless-linux-armv7
+            binaries/volok-linux-amd64
+            binaries/volok-linux-arm64
+            binaries/volok-linux-armv7
             ipk/*.ipk
