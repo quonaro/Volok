@@ -19,6 +19,7 @@ XRAY_VERSION="v26.3.27"
 XRAY_BASE="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}"
 
 NAME=""
+EXPLICIT_NAME=false
 HOST=""
 PORT=""
 SNI="yandex.ru"
@@ -52,7 +53,7 @@ url_encode() {
 usage() {
 	cat <<'EOF'
 Usage: bash -s -- [OPTIONS]
-  --name NAME              display name (default: hostname)
+  --name NAME              display name (default: auto "<flag> <Country>#<4 digits>")
   --host HOST              public host/IP of this VPS (required or auto-detected)
   --port PORT              VLESS port (default: random 10000-65535)
   --sni SNI                REALITY SNI (default: yandex.ru)
@@ -65,7 +66,7 @@ EOF
 parse_args() {
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
-			--name) NAME="${2:-}"; shift 2 ;;
+			--name) NAME="${2:-}"; EXPLICIT_NAME=true; shift 2 ;;
 			--host) HOST="${2:-}"; shift 2 ;;
 			--port) PORT="${2:-}"; shift 2 ;;
 			--sni) SNI="${2:-}"; shift 2 ;;
@@ -168,14 +169,16 @@ generate_identity() {
 		log_info "reusing existing node identity"
 		local meta_name
 		meta_name="$(jq -r '.name' "$META_FILE")"
-		# An explicit --name updates the stored label for the next callback.
-		if [[ -n "$NAME" ]]; then
+		# An explicit --name always wins and updates the stored label.
+		if $EXPLICIT_NAME; then
 			if [[ "$meta_name" != "$NAME" ]]; then
 				set_meta_name "$NAME"
 				log_info "node name updated to: $NAME"
 			fi
-		elif [[ "$meta_name" == "$(hostname 2>/dev/null)" || "$meta_name" == *"GNU/Linux"* ]]; then
-			# Old default label: replace with the auto-detected "<flag> <Country>".
+		elif [[ "$meta_name" == "$(hostname 2>/dev/null)" \
+			|| "$meta_name" == *"GNU/Linux"* \
+			|| "$meta_name" != *"#"* ]]; then
+			# Old default label or missing #suffix: regenerate auto name.
 			local auto_name
 			auto_name="$(detect_name "$(jq -r '.host' "$META_FILE")")"
 			if [[ -n "$auto_name" && "$auto_name" != "$meta_name" ]]; then
@@ -195,7 +198,9 @@ generate_identity() {
 	SHORT_ID="$(od -An -tx1 -N8 /dev/urandom | tr -d ' \n')"
 	[[ -z "$PORT" ]] && PORT="$(shuf -i 10000-65535 -n 1)"
 	[[ -z "$HOST" ]] && HOST="$(detect_public_ip)"
-	[[ -z "$NAME" ]] && NAME="$(detect_name "$HOST")"
+	if ! $EXPLICIT_NAME; then
+		NAME="$(detect_name "$HOST")"
+	fi
 
 	cat > "$META_FILE" <<EOF
 {
@@ -269,13 +274,14 @@ flag_from_code() {
 	printf '%s' "$out"
 }
 
-# detect_name builds the default node label: "<flag> <Country>".
+# detect_name builds the default node label: "<flag> <Country>#<4 digits>".
 detect_name() {
-	local ip="$1"
+	local ip="$1" suffix
+	suffix="$(shuf -i 1000-9999 -n 1)"
 	if detect_country "$ip"; then
-		printf '%s %s' "$(flag_from_code "$COUNTRY_CODE")" "$COUNTRY_NAME"
+		printf '%s %s#%s' "$(flag_from_code "$COUNTRY_CODE")" "$COUNTRY_NAME" "$suffix"
 	else
-		hostname 2>/dev/null || echo vps
+		printf 'VPS#%s' "$suffix"
 	fi
 }
 
