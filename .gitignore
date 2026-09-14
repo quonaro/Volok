@@ -16,3 +16,18 @@ volok.json
 *.test
 *.out
 tmp/
+
+# Legacy Outless artifacts left in this working directory
+# (local data only — never commit these)
+.cache/
+/cache.db
+config.yaml
+*.db
+*.db-shm
+*.db-wal
+/outless
+/outless-linux-*
+outless_*.ipk
+frontend/
+web/
+/private/
