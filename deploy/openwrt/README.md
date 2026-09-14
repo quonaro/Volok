@@ -24,7 +24,7 @@ file; uninstalling the package does not delete it.
 
 ## HTTPS
 
-Volok binds to `127.0.0.1:41230` by default. Terminate HTTPS on the same
+Volok binds to `127.0.0.1:41220` by default. Terminate HTTPS on the same
 router (or another trusted host) and proxy `/`, `/sub`, `/register`,
 `/nodes/*` to it. Do not cache these paths and do not log token queries.
 

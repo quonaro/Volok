@@ -58,7 +58,7 @@ func (s *Store) Init(publicURL string) (*Config, error) {
 		Token:         token,
 		Users:         []string{},
 		SchemaVersion: SchemaVersion,
-		Listen:        "127.0.0.1:41230",
+		Listen:        "127.0.0.1:41220",
 		PublicURL:     publicURL,
 		Nodes:         []Node{},
 	}

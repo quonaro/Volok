@@ -153,7 +153,7 @@ func TestUnknownAndDuplicateKeysRejected(t *testing.T) {
 		t.Fatal(err)
 	}
 	bad := `{"token":"` + strings.Repeat("a", 64) + `","bogus":1,` +
-		`"schema_version":1,"listen":"127.0.0.1:41230",` +
+		`"schema_version":1,"listen":"127.0.0.1:41220",` +
 		`"public_url":"https://x.example","nodes":[]}`
 	if err := os.WriteFile(s.path, []byte(bad), 0o600); err != nil {
 		t.Fatal(err)
@@ -164,7 +164,7 @@ func TestUnknownAndDuplicateKeysRejected(t *testing.T) {
 
 	dup := `{"token":"` + strings.Repeat("a", 64) + `","token":"` +
 		strings.Repeat("b", 64) + `","schema_version":1,` +
-		`"listen":"127.0.0.1:41230","public_url":"https://x.example","nodes":[]}`
+		`"listen":"127.0.0.1:41220","public_url":"https://x.example","nodes":[]}`
 	if err := os.WriteFile(s.path, []byte(dup), 0o600); err != nil {
 		t.Fatal(err)
 	}

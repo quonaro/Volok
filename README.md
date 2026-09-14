@@ -95,7 +95,7 @@ cannot install nodes or change the library.
 
 ## HTTPS
 
-Volok listens on `127.0.0.1:41230` by default. Put an HTTPS reverse proxy
+Volok listens on `127.0.0.1:41220` by default. Put an HTTPS reverse proxy
 (domain + TLS) in front of it, point `public_url` at that origin, and make
 sure the proxy does not cache `/sub`, `/register` or `/nodes/*` and does not
 log token query strings.
