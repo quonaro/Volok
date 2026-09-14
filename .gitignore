@@ -1,6 +1,7 @@
 # Binaries
 /volok
 volok-linux-*
+*.ipk
 dist/
 
 # Runtime state (contains secrets)
@@ -16,3 +17,9 @@ volok.json
 *.test
 *.out
 tmp/
+
+# Private scripts (router credentials, deploy secrets)
+/private/
+
+# OpenWrt SDK cache
+.cache/
