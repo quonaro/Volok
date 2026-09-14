@@ -166,6 +166,17 @@ install_xray() {
 generate_identity() {
 	if [[ -f "$META_FILE" ]]; then
 		log_info "reusing existing node identity"
+		# An explicit --name updates the stored label for the next callback.
+		if [[ -n "$NAME" ]]; then
+			local meta_name
+			meta_name="$(jq -r '.name' "$META_FILE")"
+			if [[ "$meta_name" != "$NAME" ]]; then
+				jq --arg name "$NAME" '.name = $name' "$META_FILE" > "$META_FILE.tmp" \
+					&& mv "$META_FILE.tmp" "$META_FILE"
+				chmod 600 "$META_FILE"
+				log_info "node name updated to: $NAME"
+			fi
+		fi
 		return 0
 	fi
 
@@ -310,11 +321,15 @@ start_service() {
 }
 
 check_port() {
-	if (echo > "/dev/tcp/127.0.0.1/$PORT") 2>/dev/null; then
-		log_info "port $PORT is listening locally"
-	else
-		die "port $PORT is not listening"
-	fi
+	local i
+	for i in $(seq 1 15); do
+		if (echo > "/dev/tcp/127.0.0.1/$PORT") 2>/dev/null; then
+			log_info "port $PORT is listening locally"
+			return 0
+		fi
+		sleep 1
+	done
+	die "port $PORT is not listening"
 }
 
 build_link() {
