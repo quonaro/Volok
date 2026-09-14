@@ -21,5 +21,8 @@ tmp/
 # Private scripts (router credentials, deploy secrets)
 /private/
 
+# Backup of the old production Outless (contains secrets and data)
+/old-prod/
+
 # OpenWrt SDK cache
 .cache/
