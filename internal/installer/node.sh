@@ -166,15 +166,21 @@ install_xray() {
 generate_identity() {
 	if [[ -f "$META_FILE" ]]; then
 		log_info "reusing existing node identity"
+		local meta_name
+		meta_name="$(jq -r '.name' "$META_FILE")"
 		# An explicit --name updates the stored label for the next callback.
 		if [[ -n "$NAME" ]]; then
-			local meta_name
-			meta_name="$(jq -r '.name' "$META_FILE")"
 			if [[ "$meta_name" != "$NAME" ]]; then
-				jq --arg name "$NAME" '.name = $name' "$META_FILE" > "$META_FILE.tmp" \
-					&& mv "$META_FILE.tmp" "$META_FILE"
-				chmod 600 "$META_FILE"
+				set_meta_name "$NAME"
 				log_info "node name updated to: $NAME"
+			fi
+		elif [[ "$meta_name" == "$(hostname 2>/dev/null)" || "$meta_name" == *"GNU/Linux"* ]]; then
+			# Old default label: replace with the auto-detected "<flag> <Country>".
+			local auto_name
+			auto_name="$(detect_name "$(jq -r '.host' "$META_FILE")")"
+			if [[ -n "$auto_name" && "$auto_name" != "$meta_name" ]]; then
+				set_meta_name "$auto_name"
+				log_info "node name updated to: $auto_name"
 			fi
 		fi
 		return 0
@@ -189,7 +195,7 @@ generate_identity() {
 	SHORT_ID="$(od -An -tx1 -N8 /dev/urandom | tr -d ' \n')"
 	[[ -z "$PORT" ]] && PORT="$(shuf -i 10000-65535 -n 1)"
 	[[ -z "$HOST" ]] && HOST="$(detect_public_ip)"
-	[[ -z "$NAME" ]] && NAME="$(hostname 2>/dev/null || echo vps)"
+	[[ -z "$NAME" ]] && NAME="$(detect_name "$HOST")"
 
 	cat > "$META_FILE" <<EOF
 {
@@ -223,8 +229,53 @@ random_hex() {
 	od -An -tx1 -N"$1" /dev/urandom | tr -d ' \n'
 }
 
+set_meta_name() {
+	local new_name="$1"
+	jq --arg name "$new_name" '.name = $name' "$META_FILE" > "$META_FILE.tmp" \
+		&& mv "$META_FILE.tmp" "$META_FILE"
+	chmod 600 "$META_FILE"
+}
+
 detect_public_ip() {
 	curl -4 -fsSL https://icanhazip.com 2>/dev/null || curl -4 -fsSL https://api.ipify.org 2>/dev/null || die "cannot detect public IP; pass --host"
+}
+
+# detect_country resolves the country of an IP via a free geo API.
+# Sets COUNTRY_CODE and COUNTRY_NAME on success.
+detect_country() {
+	local ip="$1" r
+	COUNTRY_CODE=""
+	COUNTRY_NAME=""
+	r="$(curl -fsS --max-time 10 "https://ipwho.is/${ip}" 2>/dev/null || true)"
+	COUNTRY_CODE="$(printf '%s' "$r" | jq -r '.country_code // empty' 2>/dev/null)"
+	COUNTRY_NAME="$(printf '%s' "$r" | jq -r '.country // empty' 2>/dev/null)"
+	if [[ -z "$COUNTRY_CODE" ]]; then
+		r="$(curl -fsS --max-time 10 "http://ip-api.com/json/${ip}?fields=status,countryCode,country" 2>/dev/null || true)"
+		COUNTRY_CODE="$(printf '%s' "$r" | jq -r 'if .status == "success" then .countryCode else empty end' 2>/dev/null)"
+		COUNTRY_NAME="$(printf '%s' "$r" | jq -r 'if .status == "success" then .country else empty end' 2>/dev/null)"
+	fi
+	[[ -n "$COUNTRY_CODE" ]]
+}
+
+# flag_from_code turns a two-letter ISO country code into a flag emoji.
+flag_from_code() {
+	local code="$1" i cp out=""
+	local base=127397
+	for ((i = 0; i < ${#code}; i++)); do
+		cp=$(( $(printf '%d' "'${code:$i:1}") - 65 + base ))
+		out+="$(printf "\\U%08X" "$cp")"
+	done
+	printf '%s' "$out"
+}
+
+# detect_name builds the default node label: "<flag> <Country>".
+detect_name() {
+	local ip="$1"
+	if detect_country "$ip"; then
+		printf '%s %s' "$(flag_from_code "$COUNTRY_CODE")" "$COUNTRY_NAME"
+	else
+		hostname 2>/dev/null || echo vps
+	fi
 }
 
 generate_config() {
