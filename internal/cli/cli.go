@@ -1,11 +1,16 @@
-// Package cli implements the volok command line interface.
+// Package cli implements the volok command line interface on top of the
+// Lota engine (github.com/quonaro/lota). Command definitions live in
+// cli.yml; native handlers are registered here.
 package cli
 
 import (
-	"flag"
+	"context"
+	_ "embed"
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/quonaro/lota/engine"
 )
 
 // version is injected at build time via -ldflags "-X volok/internal/cli.version=<hash>".
@@ -15,73 +20,82 @@ const (
 	defaultFile  = "/etc/volok/volok.json"
 	versionValue = "dev"
 
-	subShow      = "show"
 	initSystemd  = "systemd"
 	initProcd    = "procd"
 	formatBase64 = "base64"
+	strTrue      = "true"
 )
 
-// App is the CLI entry point.
-type App struct {
-	name   string
-	args   []string
-	file   string
-	stdout io.Writer
-	stderr io.Writer
+// configFile is set by main from the --file flag (removed from args before
+// they reach Lota, which does not parse global flags).
+var configFile string
+
+// SetConfigFile overrides the volok.json path from the --file flag.
+func SetConfigFile(path string) {
+	configFile = path
 }
 
-// New creates a CLI app.
-func New(name string, args []string, stdout, stderr io.Writer) *App {
-	return &App{name: name, args: args, stdout: stdout, stderr: stderr}
+// filePath resolves the JSON path: flag, then VOLOK_FILE, then the default.
+func filePath() string {
+	if configFile != "" {
+		return configFile
+	}
+	if p := os.Getenv("VOLOK_FILE"); p != "" {
+		return p
+	}
+	return defaultFile
 }
 
-// Run dispatches the command and returns a process exit code.
-func (a *App) Run() int {
-	if len(a.args) == 0 {
-		a.printHelp()
-		return 1
+//go:embed cli.yml
+var cliYAML []byte
+
+// BuildCLI constructs the Lota app with all native handlers registered.
+func BuildCLI(stdout, stderr io.Writer) (*engine.App, error) {
+	builder := engine.NewBuilder("volok", cliYAML)
+
+	register := map[string]engine.NativeFunc{
+		"init":                runInit,
+		"serve":               runServe,
+		"install-command":     runInstallCommand,
+		"config.show":         runConfigShow,
+		"config.validate":     runConfigValidate,
+		"config.set":          runConfigSet,
+		"token.show":          runTokenShow,
+		"token.rotate":        runTokenRotate,
+		"user.add":            runUserAdd,
+		"user.list":           runUserList,
+		"user.remove":         runUserRemove,
+		"node.list":           runNodeList,
+		"node.show":           runNodeShow,
+		"node.add":            runNodeAdd,
+		"node.rename":         runNodeRename,
+		"node.enable":         runNodeEnable,
+		"node.disable":        runNodeDisable,
+		"node.remove":         runNodeRemove,
+		"subscription.url":    runSubscriptionURL,
+		"subscription.export": runSubscriptionExport,
+		"service.install":     runServiceInstall,
+		"service.start":       runServiceStart,
+		"service.stop":        runServiceStop,
+		"service.restart":     runServiceRestart,
+		"service.status":      runServiceStatus,
+		"service.enable":      runServiceEnable,
+		"service.disable":     runServiceDisable,
+		"version":             runVersion,
+	}
+	for path, fn := range register {
+		builder.RegisterNative(path, fn)
 	}
 
-	fs := flag.NewFlagSet("volok", flag.ContinueOnError)
-	fs.SetOutput(a.stderr)
-	fs.StringVar(&a.file, "file", "", "path to volok.json (default $VOLOK_FILE or /etc/volok/volok.json)")
-	if err := fs.Parse(a.args); err != nil {
-		return 1
-	}
+	return builder.WithOptions(engine.Options{
+		Stdout: stdout,
+		Stderr: stderr,
+	}).Build()
+}
 
-	rest := fs.Args()
-	if len(rest) == 0 {
-		a.printHelp()
-		return 1
-	}
-	if a.file == "" {
-		a.file = os.Getenv("VOLOK_FILE")
-	}
-	if a.file == "" {
-		a.file = defaultFile
-	}
-
-	cmd := rest[0]
-	if cmd == "help" || cmd == "-h" || cmd == "--help" {
-		a.printHelp()
-		return 0
-	}
-	if cmd == "version" {
-		fmt.Fprintf(a.stdout, "volok version %s\n", currentVersion())
-		return 0
-	}
-
-	handler, ok := commands[cmd]
-	if !ok {
-		fmt.Fprintf(a.stderr, "unknown command %q\n", cmd)
-		a.printHelp()
-		return 1
-	}
-	if err := handler(a, rest[1:]); err != nil {
-		fmt.Fprintf(a.stderr, "%s: %v\n", cmd, err)
-		return 1
-	}
-	return 0
+func runVersion(_ context.Context, nctx engine.NativeContext) error {
+	fmt.Fprintf(nctx.Stdout, "volok version %s\n", currentVersion())
+	return nil
 }
 
 func currentVersion() string {
@@ -89,61 +103,4 @@ func currentVersion() string {
 		return version
 	}
 	return versionValue
-}
-
-func (a *App) printHelp() {
-	fmt.Fprintf(a.stdout, `%s - minimal VLESS node library
-
-Usage: %s [--file PATH] <command> [args]
-
-Commands:
-  init                     create volok.json with a fresh admin token
-  serve                    run the HTTP server in foreground
-  config show|validate     show redacted config or validate it
-  config set <key> <value> change listen or public-url
-  token show|rotate        show or rotate the admin token
-  user add|list|remove     manage reader subscription tokens
-  node list|show|add|rename|enable|disable|remove
-  subscription url|export  build a subscription URL or export links
-  install-command          print the curl|bash command for a VPS
-  service <subcommand>     install/start/stop/restart/status/enable/disable
-  version                  print version
-  help                     show this help
-
-Use "volok <command> -h" for command-specific flags.
-`, a.name, a.name)
-}
-
-type handlerFunc func(a *App, args []string) error
-
-var commands = map[string]handlerFunc{
-	"init":            runInit,
-	"serve":           runServe,
-	"config":          runConfig,
-	"token":           runToken,
-	"user":            runUser,
-	"node":            runNode,
-	"subscription":    runSubscription,
-	"install-command": runInstallCommand,
-	"service":         runService,
-}
-
-func requireArgs(args []string, n int) error {
-	if len(args) < n {
-		return fmt.Errorf("missing arguments")
-	}
-	return nil
-}
-
-func flagSet(name string, out io.Writer) *flag.FlagSet {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	fs.SetOutput(out)
-	return fs
-}
-
-func unknownArg(args []string, rest string) error {
-	if len(args) > 0 {
-		return fmt.Errorf("unexpected argument %q for %s", args[0], rest)
-	}
-	return nil
 }

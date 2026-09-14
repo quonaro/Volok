@@ -2,35 +2,19 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
+	"github.com/quonaro/lota/engine"
+
 	"volok/internal/store"
 )
 
-func runUser(a *App, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("user requires a subcommand: add|list|remove")
-	}
-	switch args[0] {
-	case "add":
-		return userAdd(a, args[1:])
-	case "list":
-		return userList(a, args[1:])
-	case "remove":
-		return userRemove(a, args[1:])
-	default:
-		return fmt.Errorf("unknown user subcommand %q", args[0])
-	}
-}
-
-func userAdd(a *App, args []string) error {
-	if err := unknownArg(args, "user add"); err != nil {
-		return err
-	}
-	s := store.Open(a.file)
+func runUserAdd(_ context.Context, nctx engine.NativeContext) error {
+	s := store.Open(filePath())
 	cfg, err := s.Update(func(c *store.Config) error {
 		token, err := store.NewToken()
 		if err != nil {
@@ -43,66 +27,49 @@ func userAdd(a *App, args []string) error {
 		return err
 	}
 	newToken := cfg.Users[len(cfg.Users)-1]
-	fmt.Fprintf(a.stdout, "user token: %s\n", newToken)
-	fmt.Fprintf(a.stdout, "subscription: %s/sub?token=%s\n", cfg.PublicURL, newToken)
+	fmt.Fprintf(nctx.Stdout, "user token: %s\n", newToken)
+	fmt.Fprintf(nctx.Stdout, "subscription: %s/sub?token=%s\n", cfg.PublicURL, newToken)
 	return nil
 }
 
-func userList(a *App, args []string) error {
-	fs := flagSet("user list", a.stderr)
-	showTokens := fs.Bool("show-tokens", false, "print full tokens instead of fingerprints")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	if err := unknownArg(fs.Args(), "user list"); err != nil {
-		return err
-	}
-
-	s := store.Open(a.file)
+func runUserList(_ context.Context, nctx engine.NativeContext) error {
+	showTokens := nctx.Args["show-tokens"] == strTrue
+	s := store.Open(filePath())
 	cfg, err := s.Read()
 	if err != nil {
 		return err
 	}
 	if len(cfg.Users) == 0 {
-		fmt.Fprintln(a.stdout, "no user tokens")
+		fmt.Fprintln(nctx.Stdout, "no user tokens")
 		return nil
 	}
 	for i, token := range cfg.Users {
-		if *showTokens {
-			fmt.Fprintf(a.stdout, "%d\t%s\n", i, token)
+		if showTokens {
+			fmt.Fprintf(nctx.Stdout, "%d\t%s\n", i, token)
 		} else {
-			fmt.Fprintf(a.stdout, "%d\t%s\n", i, fingerprint(token))
+			fmt.Fprintf(nctx.Stdout, "%d\t%s\n", i, fingerprint(token))
 		}
 	}
 	return nil
 }
 
-func userRemove(a *App, args []string) error {
-	fs := flagSet("user remove", a.stderr)
-	yes := fs.Bool("yes", false, "confirm removal")
-	tokenStdin := fs.Bool("token-stdin", false, "read the token from stdin")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	if !*yes {
+func runUserRemove(_ context.Context, nctx engine.NativeContext) error {
+	if nctx.Args["yes"] != strTrue {
 		return fmt.Errorf("removal requires --yes")
 	}
-	token := ""
-	if *tokenStdin {
+	token := nctx.Args["token"]
+	if nctx.Args["token-stdin"] == strTrue {
 		line, err := readLine(os.Stdin)
 		if err != nil {
 			return fmt.Errorf("reading token from stdin: %w", err)
 		}
 		token = line
-	} else {
-		rest := fs.Args()
-		if len(rest) != 1 {
-			return fmt.Errorf("expected exactly one token argument or --token-stdin")
-		}
-		token = rest[0]
+	}
+	if token == "" {
+		return fmt.Errorf("expected a token argument or --token-stdin")
 	}
 
-	s := store.Open(a.file)
+	s := store.Open(filePath())
 	removed := false
 	_, err := s.Update(func(c *store.Config) error {
 		out := c.Users[:0]
@@ -122,8 +89,8 @@ func userRemove(a *App, args []string) error {
 	if !removed {
 		return fmt.Errorf("no matching user token found")
 	}
-	fmt.Fprintln(a.stdout, "user token removed")
-	fmt.Fprintln(a.stdout, "note: this stops future subscription updates, it does not revoke already distributed VLESS links")
+	fmt.Fprintln(nctx.Stdout, "user token removed")
+	fmt.Fprintln(nctx.Stdout, "note: this stops future subscription updates, it does not revoke already distributed VLESS links")
 	return nil
 }
 

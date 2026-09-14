@@ -6,48 +6,39 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
+
+	"github.com/quonaro/lota/engine"
 
 	"volok/internal/httpserver"
 	"volok/internal/store"
 )
 
-func runInit(a *App, args []string) error {
-	fs := flagSet("init", a.stderr)
-	publicURL := fs.String("public-url", "", "public https origin of Volok")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	if err := unknownArg(fs.Args(), "init"); err != nil {
-		return err
-	}
-	if *publicURL == "" {
+func runInit(_ context.Context, nctx engine.NativeContext) error {
+	publicURL := nctx.Args["public-url"]
+	if publicURL == "" {
 		return fmt.Errorf("--public-url is required (e.g. https://vpn.example.com)")
 	}
-	clean, err := store.CleanPublicURL(*publicURL)
+	clean, err := store.CleanPublicURL(publicURL)
 	if err != nil {
 		return err
 	}
-	s := store.Open(a.file)
+	s := store.Open(filePath())
 	if s.Exists() {
-		return fmt.Errorf("refusing to overwrite existing %s", a.file)
+		return fmt.Errorf("refusing to overwrite existing %s", filePath())
 	}
 	cfg, err := s.Init(clean)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(a.stdout, "created %s\n", a.file)
-	fmt.Fprintf(a.stdout, "admin token: %s\n", cfg.Token)
-	fmt.Fprintf(a.stdout, "keep this token secret; it grants installer and registration access\n")
+	fmt.Fprintf(nctx.Stdout, "created %s\n", filePath())
+	fmt.Fprintf(nctx.Stdout, "admin token: %s\n", cfg.Token)
+	fmt.Fprintln(nctx.Stdout, "keep this token secret; it grants installer and registration access")
 	return nil
 }
 
-func runServe(a *App, args []string) error {
-	if err := unknownArg(args, "serve"); err != nil {
-		return err
-	}
-	s := store.Open(a.file)
+func runServe(_ context.Context, nctx engine.NativeContext) error {
+	s := store.Open(filePath())
 	cfg, err := s.Read()
 	if err != nil {
 		return err
@@ -68,69 +59,45 @@ func runServe(a *App, args []string) error {
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(ln) }()
 
-	fmt.Fprintf(a.stdout, "volok serving on %s\n", addr)
+	fmt.Fprintf(nctx.Stdout, "volok serving on %s\n", addr)
 	select {
 	case <-ctx.Done():
-		fmt.Fprintln(a.stdout, "shutting down")
+		fmt.Fprintln(nctx.Stdout, "shutting down")
 		return nil
 	case err := <-serveErr:
 		return err
 	}
 }
 
-func runConfig(a *App, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("config requires a subcommand: show|validate|set")
-	}
-	switch args[0] {
-	case subShow:
-		return configShow(a, args[1:])
-	case "validate":
-		return configValidate(a, args[1:])
-	case "set":
-		return configSet(a, args[1:])
-	default:
-		return fmt.Errorf("unknown config subcommand %q", args[0])
-	}
-}
-
-func configShow(a *App, args []string) error {
-	if err := unknownArg(args, "config show"); err != nil {
-		return err
-	}
-	s := store.Open(a.file)
+func runConfigShow(_ context.Context, nctx engine.NativeContext) error {
+	s := store.Open(filePath())
 	cfg, err := s.Read()
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(a.stdout, "file:            %s\n", a.file)
-	fmt.Fprintf(a.stdout, "schema_version:  %d\n", cfg.SchemaVersion)
-	fmt.Fprintf(a.stdout, "listen:          %s\n", cfg.Listen)
-	fmt.Fprintf(a.stdout, "public_url:      %s\n", cfg.PublicURL)
-	fmt.Fprintf(a.stdout, "admin token:     <redacted>\n")
-	fmt.Fprintf(a.stdout, "users:           %d token(s)\n", len(cfg.Users))
-	fmt.Fprintf(a.stdout, "nodes:           %d node(s)\n", len(cfg.Nodes))
+	fmt.Fprintf(nctx.Stdout, "file:            %s\n", filePath())
+	fmt.Fprintf(nctx.Stdout, "schema_version:  %d\n", cfg.SchemaVersion)
+	fmt.Fprintf(nctx.Stdout, "listen:          %s\n", cfg.Listen)
+	fmt.Fprintf(nctx.Stdout, "public_url:      %s\n", cfg.PublicURL)
+	fmt.Fprintln(nctx.Stdout, "admin token:     <redacted>")
+	fmt.Fprintf(nctx.Stdout, "users:           %d token(s)\n", len(cfg.Users))
+	fmt.Fprintf(nctx.Stdout, "nodes:           %d node(s)\n", len(cfg.Nodes))
 	return nil
 }
 
-func configValidate(a *App, args []string) error {
-	if err := unknownArg(args, "config validate"); err != nil {
-		return err
-	}
-	s := store.Open(a.file)
+func runConfigValidate(_ context.Context, nctx engine.NativeContext) error {
+	s := store.Open(filePath())
 	if _, err := s.Read(); err != nil {
 		return err
 	}
-	fmt.Fprintf(a.stdout, "%s is valid\n", a.file)
+	fmt.Fprintf(nctx.Stdout, "%s is valid\n", filePath())
 	return nil
 }
 
-func configSet(a *App, args []string) error {
-	if err := requireArgs(args, 2); err != nil {
-		return err
-	}
-	key, value := args[0], strings.Join(args[1:], " ")
-	s := store.Open(a.file)
+func runConfigSet(_ context.Context, nctx engine.NativeContext) error {
+	key := nctx.Args["key"]
+	value := nctx.Args["value"]
+	s := store.Open(filePath())
 	_, err := s.Update(func(c *store.Config) error {
 		switch key {
 		case "listen":
@@ -152,9 +119,9 @@ func configSet(a *App, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(a.stdout, "set %s\n", key)
+	fmt.Fprintf(nctx.Stdout, "set %s\n", key)
 	if key == "listen" {
-		fmt.Fprintln(a.stdout, "restart the service for the new listen address to take effect")
+		fmt.Fprintln(nctx.Stdout, "restart the service for the new listen address to take effect")
 	}
 	return nil
 }

@@ -1,0 +1,140 @@
+init:
+  desc: Create volok.json with a fresh admin token
+  native: true
+  args:
+    - "public-url|p:str"
+
+serve:
+  desc: Run the HTTP server in foreground
+  native: true
+
+install-command:
+  desc: Print the curl|bash command for a VPS
+  native: true
+
+config:
+  desc: Configuration commands
+  show:
+    desc: Show redacted config
+    native: true
+  validate:
+    desc: Validate config without writing
+    native: true
+  set:
+    desc: Change listen or public-url
+    native: true
+    args:
+      - "key:str"
+      - "value:str"
+
+token:
+  desc: Admin token commands
+  show:
+    desc: Show the admin token
+    native: true
+  rotate:
+    desc: Rotate the admin token
+    native: true
+    args:
+      - "yes|y:bool?"
+
+user:
+  desc: Reader subscription tokens
+  add:
+    desc: Generate a new reader token
+    native: true
+  list:
+    desc: List reader tokens
+    native: true
+    args:
+      - "show-tokens:bool?"
+  remove:
+    desc: Remove a reader token
+    native: true
+    args:
+      - "token:str?"
+      - "token-stdin:bool?"
+      - "yes|y:bool?"
+
+node:
+  desc: Node library commands
+  list:
+    desc: List nodes
+    native: true
+  show:
+    desc: Show one node with its link
+    native: true
+    args:
+      - "id:str"
+  add:
+    desc: Add an existing direct link
+    native: true
+    args:
+      - "name|n:str"
+      - "url|u:str"
+      - "url-stdin:bool?"
+  rename:
+    desc: Rename a node
+    native: true
+    args:
+      - "id:str"
+      - "name:str"
+  enable:
+    desc: Enable a node in the subscription
+    native: true
+    args:
+      - "id:str"
+  disable:
+    desc: Disable a node in the subscription
+    native: true
+    args:
+      - "id:str"
+  remove:
+    desc: Remove a node from the library
+    native: true
+    args:
+      - "id:str"
+      - "yes|y:bool?"
+
+subscription:
+  desc: Subscription commands
+  url:
+    desc: Build a subscription URL for a reader token
+    native: true
+    args:
+      - "format|f:str=plain"
+      - "user-token|u:str"
+      - "token-stdin:bool?"
+  export:
+    desc: Export the subscription body from the file
+    native: true
+    args:
+      - "format|f:str=plain"
+
+service:
+  desc: Volok service lifecycle
+  install:
+    desc: Install the init script or systemd unit
+    native: true
+  start:
+    desc: Start the service
+    native: true
+  stop:
+    desc: Stop the service
+    native: true
+  restart:
+    desc: Restart the service
+    native: true
+  status:
+    desc: Show the service status
+    native: true
+  enable:
+    desc: Enable the service on boot
+    native: true
+  disable:
+    desc: Disable the service on boot
+    native: true
+
+version:
+  desc: Show version
+  native: true

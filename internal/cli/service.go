@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/quonaro/lota/engine"
 )
 
 //go:embed assets/volok.service
@@ -26,25 +29,7 @@ var execCommand = func(name string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
-func runService(a *App, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("service requires a subcommand: install|start|stop|restart|status|enable|disable")
-	}
-	action := args[0]
-	switch action {
-	case "install":
-		return serviceInstall(a, args[1:])
-	case "start", "stop", "restart", "status", "enable", "disable":
-		return serviceControl(a, action)
-	default:
-		return fmt.Errorf("unknown service subcommand %q", action)
-	}
-}
-
-func serviceInstall(a *App, args []string) error {
-	if err := unknownArg(args, "service install"); err != nil {
-		return err
-	}
+func runServiceInstall(_ context.Context, nctx engine.NativeContext) error {
 	switch detectInit() {
 	case initSystemd:
 		if err := writeIfOurs(systemdPath, systemdUnit, 0o644); err != nil {
@@ -56,7 +41,7 @@ func serviceInstall(a *App, args []string) error {
 		if _, err := execCommand("systemctl", "enable", "volok"); err != nil {
 			return fmt.Errorf("systemctl enable: %w", err)
 		}
-		fmt.Fprintln(a.stdout, "installed systemd unit /etc/systemd/system/volok.service")
+		fmt.Fprintln(nctx.Stdout, "installed systemd unit /etc/systemd/system/volok.service")
 	case initProcd:
 		if err := writeIfOurs(procdPath, procdInit, 0o755); err != nil {
 			return err
@@ -64,15 +49,39 @@ func serviceInstall(a *App, args []string) error {
 		if _, err := execCommand(procdPath, "enable"); err != nil {
 			return fmt.Errorf("enabling volok init script: %w", err)
 		}
-		fmt.Fprintln(a.stdout, "installed OpenWrt init script /etc/init.d/volok")
+		fmt.Fprintln(nctx.Stdout, "installed OpenWrt init script /etc/init.d/volok")
 	default:
 		return fmt.Errorf("no supported init system found (systemd or procd)")
 	}
-	fmt.Fprintln(a.stdout, "create the library first with: volok init --public-url https://…")
+	fmt.Fprintln(nctx.Stdout, "create the library first with: volok init --public-url https://…")
 	return nil
 }
 
-func serviceControl(a *App, action string) error {
+func runServiceStart(_ context.Context, nctx engine.NativeContext) error {
+	return serviceControl(nctx, "start")
+}
+
+func runServiceStop(_ context.Context, nctx engine.NativeContext) error {
+	return serviceControl(nctx, "stop")
+}
+
+func runServiceRestart(_ context.Context, nctx engine.NativeContext) error {
+	return serviceControl(nctx, "restart")
+}
+
+func runServiceStatus(_ context.Context, nctx engine.NativeContext) error {
+	return serviceControl(nctx, "status")
+}
+
+func runServiceEnable(_ context.Context, nctx engine.NativeContext) error {
+	return serviceControl(nctx, "enable")
+}
+
+func runServiceDisable(_ context.Context, nctx engine.NativeContext) error {
+	return serviceControl(nctx, "disable")
+}
+
+func serviceControl(nctx engine.NativeContext, action string) error {
 	switch detectInit() {
 	case initSystemd:
 		out, err := execCommand("systemctl", action, "volok")
@@ -80,7 +89,7 @@ func serviceControl(a *App, action string) error {
 			return fmt.Errorf("systemctl %s volok: %w (%s)", action, err, out)
 		}
 		if out != "" {
-			fmt.Fprintln(a.stdout, out)
+			fmt.Fprintln(nctx.Stdout, out)
 		}
 	case initProcd:
 		out, err := execCommand(procdPath, action)
@@ -88,7 +97,7 @@ func serviceControl(a *App, action string) error {
 			return fmt.Errorf("%s %s: %w (%s)", procdPath, action, err, out)
 		}
 		if out != "" {
-			fmt.Fprintln(a.stdout, out)
+			fmt.Fprintln(nctx.Stdout, out)
 		}
 	default:
 		return fmt.Errorf("no supported init system found (systemd or procd)")
