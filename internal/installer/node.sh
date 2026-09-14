@@ -259,11 +259,12 @@ detect_country() {
 
 # flag_from_code turns a two-letter ISO country code into a flag emoji.
 flag_from_code() {
-	local code="$1" i cp out=""
-	local base=127397
+	local code="$1" i cp hex out=""
+	local base=127462 # 0x1F1E6: U+1F1E6 is the regional indicator for 'A'
 	for ((i = 0; i < ${#code}; i++)); do
 		cp=$(( $(printf '%d' "'${code:$i:1}") - 65 + base ))
-		out+="$(printf "\\U%08X" "$cp")"
+		hex="$(printf '%08X' "$cp")"
+		out+="$(printf '%b' "\\U${hex}")"
 	done
 	printf '%s' "$out"
 }
