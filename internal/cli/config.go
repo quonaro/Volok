@@ -31,8 +31,9 @@ func runInit(_ context.Context, nctx engine.NativeContext) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(nctx.Stdout, "created %s\n", filePath())
-	fmt.Fprintf(nctx.Stdout, "admin token: %s\n", cfg.Token)
+	green(nctx.Stdout, "created %s\n", filePath())
+	fmt.Fprint(nctx.Stdout, "admin token: ")
+	yellow(nctx.Stdout, "%s\n", cfg.Token)
 	fmt.Fprintln(nctx.Stdout, "keep this token secret; it grants installer and registration access")
 	return nil
 }
@@ -75,13 +76,13 @@ func runConfigShow(_ context.Context, nctx engine.NativeContext) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(nctx.Stdout, "file:            %s\n", filePath())
+	blue(nctx.Stdout, "file:            %s\n", filePath())
 	fmt.Fprintf(nctx.Stdout, "schema_version:  %d\n", cfg.SchemaVersion)
-	fmt.Fprintf(nctx.Stdout, "listen:          %s\n", cfg.Listen)
-	fmt.Fprintf(nctx.Stdout, "public_url:      %s\n", cfg.PublicURL)
+	cyan(nctx.Stdout, "listen:          %s\n", cfg.Listen)
+	cyan(nctx.Stdout, "public_url:      %s\n", cfg.PublicURL)
 	fmt.Fprintln(nctx.Stdout, "admin token:     <redacted>")
-	fmt.Fprintf(nctx.Stdout, "users:           %d token(s)\n", len(cfg.Users))
-	fmt.Fprintf(nctx.Stdout, "nodes:           %d node(s)\n", len(cfg.Nodes))
+	green(nctx.Stdout, "users:           %d token(s)\n", len(cfg.Users))
+	green(nctx.Stdout, "nodes:           %d node(s)\n", len(cfg.Nodes))
 	return nil
 }
 

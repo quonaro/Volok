@@ -26,11 +26,14 @@ func runNodeList(_ context.Context, nctx engine.NativeContext) error {
 		if err != nil {
 			return fmt.Errorf("node %s: %w", n.ID, err)
 		}
-		state := "disabled"
+		fmt.Fprint(nctx.Stdout, n.ID, "\t")
+		cyan(nctx.Stdout, "%s", n.Name)
+		fmt.Fprintf(nctx.Stdout, "\t%s:%d\t", p.Host, p.Port)
 		if n.Enabled {
-			state = "enabled"
+			green(nctx.Stdout, "enabled\n")
+		} else {
+			red(nctx.Stdout, "disabled\n")
 		}
-		fmt.Fprintf(nctx.Stdout, "%s\t%s\t%s:%d\t%s\n", n.ID, n.Name, p.Host, p.Port, state)
 	}
 	return nil
 }

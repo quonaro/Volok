@@ -1,19 +1,23 @@
 init:
   desc: Create volok.json with a fresh admin token
+  color: green
   native: true
   args:
     - "public-url|p:str"
 
 serve:
   desc: Run the HTTP server in foreground
+  color: green
   native: true
 
 install-command:
   desc: Print the curl|bash command for a VPS
+  color: yellow
   native: true
 
 config:
   desc: Configuration commands
+  color: blue
   show:
     desc: Show redacted config
     native: true
@@ -29,6 +33,7 @@ config:
 
 token:
   desc: Admin token commands
+  color: yellow
   show:
     desc: Show the admin token
     native: true
@@ -40,6 +45,7 @@ token:
 
 user:
   desc: Reader subscription tokens
+  color: green
   add:
     desc: Generate a new reader token
     native: true
@@ -58,6 +64,7 @@ user:
 
 node:
   desc: Node library commands
+  color: cyan
   list:
     desc: List nodes
     native: true
@@ -98,6 +105,7 @@ node:
 
 subscription:
   desc: Subscription commands
+  color: magenta
   url:
     desc: Build a subscription URL for a reader token
     native: true
@@ -113,6 +121,7 @@ subscription:
 
 service:
   desc: Volok service lifecycle
+  color: red
   install:
     desc: Install the init script or systemd unit
     native: true
@@ -137,4 +146,5 @@ service:
 
 version:
   desc: Show version
+  color: white
   native: true

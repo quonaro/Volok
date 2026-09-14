@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/fatih/color"
 	"github.com/quonaro/lota/engine"
 
 	"volok/internal/cli"
@@ -39,7 +40,7 @@ func main() {
 			app.PrintGroupHelp(groupErr.Groups)
 			os.Exit(1)
 		}
-		fmt.Fprintf(os.Stderr, "run: %v\n", err)
+		color.New(color.FgRed).Fprintf(os.Stderr, "run: %v\n", err)
 		os.Exit(1)
 	}
 }

@@ -2,11 +2,13 @@ module volok
 
 go 1.27.1
 
-require github.com/quonaro/lota v1.17.10
+require (
+	github.com/fatih/color v1.19.0
+	github.com/quonaro/lota v1.17.10
+)
 
 require (
 	github.com/creack/pty v1.1.24 // indirect
-	github.com/fatih/color v1.19.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/posener/complete/v2 v2.1.0 // indirect

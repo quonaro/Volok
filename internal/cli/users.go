@@ -27,8 +27,10 @@ func runUserAdd(_ context.Context, nctx engine.NativeContext) error {
 		return err
 	}
 	newToken := cfg.Users[len(cfg.Users)-1]
-	fmt.Fprintf(nctx.Stdout, "user token: %s\n", newToken)
-	fmt.Fprintf(nctx.Stdout, "subscription: %s/sub?token=%s\n", cfg.PublicURL, newToken)
+	fmt.Fprint(nctx.Stdout, "user token: ")
+	yellow(nctx.Stdout, "%s\n", newToken)
+	fmt.Fprint(nctx.Stdout, "subscription: ")
+	cyan(nctx.Stdout, "%s/sub?token=%s\n", cfg.PublicURL, newToken)
 	return nil
 }
 
