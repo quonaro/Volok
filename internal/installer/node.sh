@@ -37,8 +37,12 @@ log_info() { printf '\e[32m[INFO]\e[0m  %s\n' "$*"; }
 log_error() { printf '\e[31m[ERROR]\e[0m %s\n' "$*" >&2; }
 die() { log_error "$1"; exit 1; }
 
+# url_encode percent-encodes raw UTF-8 bytes for use in URL fragments.
+# LC_ALL=C forces byte-level iteration so multi-byte characters are
+# encoded correctly (e.g. flag emoji -> %F0%9F%87%AB%F0%9F%87AE).
 url_encode() {
 	local input="$1" out="" i ch
+	local LC_ALL=C
 	for ((i = 0; i < ${#input}; i++)); do
 		ch="${input:$i:1}"
 		if [[ "$ch" =~ [A-Za-z0-9_.~-] ]]; then
