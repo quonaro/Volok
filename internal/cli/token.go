@@ -15,7 +15,7 @@ func runTokenShow(_ context.Context, nctx engine.NativeContext) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(nctx.Stdout, "%s\n", cfg.Token)
+	yellow(nctx.Stdout, "%s\n", cfg.Token)
 	return nil
 }
 
@@ -35,7 +35,8 @@ func runTokenRotate(_ context.Context, nctx engine.NativeContext) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(nctx.Stdout, "admin token rotated: %s\n", cfg.Token)
+	fmt.Fprint(nctx.Stdout, "admin token rotated: ")
+	yellow(nctx.Stdout, "%s\n", cfg.Token)
 	fmt.Fprintln(nctx.Stdout, "update your installer command and any stored callbacks")
 	return nil
 }

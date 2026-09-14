@@ -10,27 +10,6 @@ serve:
   color: green
   native: true
 
-install-command:
-  desc: Print the curl|bash command for a VPS
-  color: yellow
-  native: true
-
-config:
-  desc: Configuration commands
-  color: blue
-  show:
-    desc: Show redacted config
-    native: true
-  validate:
-    desc: Validate config without writing
-    native: true
-  set:
-    desc: Change listen or public-url
-    native: true
-    args:
-      - "key:str"
-      - "value:str"
-
 token:
   desc: Admin token commands
   color: yellow
@@ -102,49 +81,3 @@ node:
     args:
       - "id:str"
       - "yes|y:bool?"
-
-subscription:
-  desc: Subscription commands
-  color: magenta
-  url:
-    desc: Build a subscription URL for a reader token
-    native: true
-    args:
-      - "format|f:str=plain"
-      - "user-token|u:str"
-      - "token-stdin:bool?"
-  export:
-    desc: Export the subscription body from the file
-    native: true
-    args:
-      - "format|f:str=plain"
-
-service:
-  desc: Volok service lifecycle
-  color: red
-  install:
-    desc: Install the init script or systemd unit
-    native: true
-  start:
-    desc: Start the service
-    native: true
-  stop:
-    desc: Stop the service
-    native: true
-  restart:
-    desc: Restart the service
-    native: true
-  status:
-    desc: Show the service status
-    native: true
-  enable:
-    desc: Enable the service on boot
-    native: true
-  disable:
-    desc: Disable the service on boot
-    native: true
-
-version:
-  desc: Show version
-  color: white
-  native: true

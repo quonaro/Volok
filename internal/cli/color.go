@@ -13,7 +13,6 @@ var (
 	colCyan   = color.New(color.FgCyan)
 	colYellow = color.New(color.FgYellow)
 	colRed    = color.New(color.FgRed)
-	colBlue   = color.New(color.FgBlue)
 )
 
 func green(w io.Writer, format string, args ...any) {
@@ -30,8 +29,4 @@ func yellow(w io.Writer, format string, args ...any) {
 
 func red(w io.Writer, format string, args ...any) {
 	colRed.Fprintf(w, format, args...)
-}
-
-func blue(w io.Writer, format string, args ...any) {
-	colBlue.Fprintf(w, format, args...)
 }

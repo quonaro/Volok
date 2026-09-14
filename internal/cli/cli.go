@@ -4,22 +4,16 @@
 package cli
 
 import (
-	"context"
 	_ "embed"
-	"fmt"
 	"io"
 	"os"
 
 	"github.com/quonaro/lota/engine"
 )
 
-// version is injected at build time via -ldflags "-X volok/internal/cli.version=<hash>".
-var version string
+const defaultFile = "/etc/volok/volok.json"
 
 const (
-	defaultFile  = "/etc/volok/volok.json"
-	versionValue = "dev"
-
 	initSystemd  = "systemd"
 	initProcd    = "procd"
 	formatBase64 = "base64"
@@ -54,34 +48,20 @@ func BuildCLI(stdout, stderr io.Writer) (*engine.App, error) {
 	builder := engine.NewBuilder("volok", cliYAML)
 
 	register := map[string]engine.NativeFunc{
-		"init":                runInit,
-		"serve":               runServe,
-		"install-command":     runInstallCommand,
-		"config.show":         runConfigShow,
-		"config.validate":     runConfigValidate,
-		"config.set":          runConfigSet,
-		"token.show":          runTokenShow,
-		"token.rotate":        runTokenRotate,
-		"user.add":            runUserAdd,
-		"user.list":           runUserList,
-		"user.remove":         runUserRemove,
-		"node.list":           runNodeList,
-		"node.show":           runNodeShow,
-		"node.add":            runNodeAdd,
-		"node.rename":         runNodeRename,
-		"node.enable":         runNodeEnable,
-		"node.disable":        runNodeDisable,
-		"node.remove":         runNodeRemove,
-		"subscription.url":    runSubscriptionURL,
-		"subscription.export": runSubscriptionExport,
-		"service.install":     runServiceInstall,
-		"service.start":       runServiceStart,
-		"service.stop":        runServiceStop,
-		"service.restart":     runServiceRestart,
-		"service.status":      runServiceStatus,
-		"service.enable":      runServiceEnable,
-		"service.disable":     runServiceDisable,
-		"version":             runVersion,
+		"init":         runInit,
+		"serve":        runServe,
+		"token.show":   runTokenShow,
+		"token.rotate": runTokenRotate,
+		"user.add":     runUserAdd,
+		"user.list":    runUserList,
+		"user.remove":  runUserRemove,
+		"node.list":    runNodeList,
+		"node.show":    runNodeShow,
+		"node.add":     runNodeAdd,
+		"node.rename":  runNodeRename,
+		"node.enable":  runNodeEnable,
+		"node.disable": runNodeDisable,
+		"node.remove":  runNodeRemove,
 	}
 	for path, fn := range register {
 		builder.RegisterNative(path, fn)
@@ -91,16 +71,4 @@ func BuildCLI(stdout, stderr io.Writer) (*engine.App, error) {
 		Stdout: stdout,
 		Stderr: stderr,
 	}).Build()
-}
-
-func runVersion(_ context.Context, nctx engine.NativeContext) error {
-	fmt.Fprintf(nctx.Stdout, "volok version %s\n", currentVersion())
-	return nil
-}
-
-func currentVersion() string {
-	if version != "" {
-		return version
-	}
-	return versionValue
 }

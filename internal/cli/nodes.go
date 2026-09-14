@@ -50,7 +50,7 @@ func runNodeShow(_ context.Context, nctx engine.NativeContext) error {
 		return fmt.Errorf("node %q not found", id)
 	}
 	fmt.Fprintf(nctx.Stdout, "id:      %s\n", n.ID)
-	fmt.Fprintf(nctx.Stdout, "name:    %s\n", n.Name)
+	cyan(nctx.Stdout, "name:    %s\n", n.Name)
 	fmt.Fprintf(nctx.Stdout, "enabled: %t\n", n.Enabled)
 	fmt.Fprintf(nctx.Stdout, "url:     %s\n", n.URL)
 	return nil
@@ -85,7 +85,7 @@ func runNodeAdd(_ context.Context, nctx engine.NativeContext) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(nctx.Stdout, "added node %s\n", id)
+	green(nctx.Stdout, "added node %s\n", id)
 	return nil
 }
 
@@ -102,7 +102,7 @@ func runNodeRename(_ context.Context, nctx engine.NativeContext) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(nctx.Stdout, "renamed node %s\n", nctx.Args["id"])
+	green(nctx.Stdout, "renamed node %s\n", nctx.Args["id"])
 	return nil
 }
 
@@ -132,7 +132,7 @@ func setNodeEnabled(nctx engine.NativeContext, enabled bool) error {
 	if enabled {
 		action = "enabled"
 	}
-	fmt.Fprintf(nctx.Stdout, "node %s %s\n", id, action)
+	green(nctx.Stdout, "node %s %s\n", id, action)
 	return nil
 }
 
@@ -161,7 +161,7 @@ func runNodeRemove(_ context.Context, nctx engine.NativeContext) error {
 	if !found {
 		return fmt.Errorf("node %q not found", id)
 	}
-	fmt.Fprintf(nctx.Stdout, "node %s removed\n", id)
+	green(nctx.Stdout, "node %s removed\n", id)
 	fmt.Fprintln(nctx.Stdout, "note: Xray on the VPS keeps running; remove the library entry only")
 	return nil
 }

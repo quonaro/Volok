@@ -60,7 +60,7 @@ func runServe(_ context.Context, nctx engine.NativeContext) error {
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(ln) }()
 
-	fmt.Fprintf(nctx.Stdout, "volok serving on %s\n", addr)
+	green(nctx.Stdout, "volok serving on %s\n", addr)
 	select {
 	case <-ctx.Done():
 		fmt.Fprintln(nctx.Stdout, "shutting down")
@@ -68,61 +68,4 @@ func runServe(_ context.Context, nctx engine.NativeContext) error {
 	case err := <-serveErr:
 		return err
 	}
-}
-
-func runConfigShow(_ context.Context, nctx engine.NativeContext) error {
-	s := store.Open(filePath())
-	cfg, err := s.Read()
-	if err != nil {
-		return err
-	}
-	blue(nctx.Stdout, "file:            %s\n", filePath())
-	fmt.Fprintf(nctx.Stdout, "schema_version:  %d\n", cfg.SchemaVersion)
-	cyan(nctx.Stdout, "listen:          %s\n", cfg.Listen)
-	cyan(nctx.Stdout, "public_url:      %s\n", cfg.PublicURL)
-	fmt.Fprintln(nctx.Stdout, "admin token:     <redacted>")
-	green(nctx.Stdout, "users:           %d token(s)\n", len(cfg.Users))
-	green(nctx.Stdout, "nodes:           %d node(s)\n", len(cfg.Nodes))
-	return nil
-}
-
-func runConfigValidate(_ context.Context, nctx engine.NativeContext) error {
-	s := store.Open(filePath())
-	if _, err := s.Read(); err != nil {
-		return err
-	}
-	fmt.Fprintf(nctx.Stdout, "%s is valid\n", filePath())
-	return nil
-}
-
-func runConfigSet(_ context.Context, nctx engine.NativeContext) error {
-	key := nctx.Args["key"]
-	value := nctx.Args["value"]
-	s := store.Open(filePath())
-	_, err := s.Update(func(c *store.Config) error {
-		switch key {
-		case "listen":
-			if _, _, err := net.SplitHostPort(value); err != nil {
-				return fmt.Errorf("invalid listen address %q", value)
-			}
-			c.Listen = value
-		case "public-url":
-			clean, err := store.CleanPublicURL(value)
-			if err != nil {
-				return err
-			}
-			c.PublicURL = clean
-		default:
-			return fmt.Errorf("unknown config key %q (allowed: listen, public-url)", key)
-		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(nctx.Stdout, "set %s\n", key)
-	if key == "listen" {
-		fmt.Fprintln(nctx.Stdout, "restart the service for the new listen address to take effect")
-	}
-	return nil
 }
