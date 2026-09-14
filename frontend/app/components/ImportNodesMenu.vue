@@ -94,6 +94,7 @@ async function handleImportConfirm(
     if (payload.mode === 'new') {
       targetGroup = await createGroupMutation.mutateAsync({
         name: payload.name,
+        inbound_id: '',
         random_enabled: false,
         show_origins: false,
       })

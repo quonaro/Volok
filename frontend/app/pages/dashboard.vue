@@ -5,7 +5,6 @@ import {
   KeyRound,
   Users,
   Key,
-  ArrowLeftRight,
   Globe,
   Terminal,
   Gauge,
@@ -35,7 +34,6 @@ import { formatBytes, periodLabel } from '~/utils/bytes'
 import {
   useTokenTrafficStats,
   useNodeTrafficStats,
-  useInboundTrafficStats,
   useDomainTrafficStats,
 } from '~/composables/stats/useEntityTraffic'
 
@@ -54,7 +52,6 @@ const { lines: logLines, isConnected: isLogConnected } = useLogStream()
 const fontSize = ref(12)
 const { data: tokenTraffic, isLoading: isTokenTrafficLoading } = useTokenTrafficStats()
 const { data: nodeTraffic, isLoading: isNodeTrafficLoading } = useNodeTrafficStats()
-const { data: inboundTraffic, isLoading: isInboundTrafficLoading } = useInboundTrafficStats()
 const { data: domainTraffic, isLoading: isDomainTrafficLoading } = useDomainTrafficStats()
 
 function copyLogs() {
@@ -321,20 +318,6 @@ const tokensWithQuota = computed(() => {
                   :items="tokenTraffic?.items ?? []"
                   :is-loading="isTokenTrafficLoading"
                   empty-text="No token traffic recorded yet"
-                />
-              </UiCard>
-            </div>
-
-            <div>
-              <h2 class="text-lg font-semibold mb-3 flex items-center gap-2">
-                <ArrowLeftRight class="h-5 w-5 text-violet-500" />
-                Per-Inbound Traffic (Today)
-              </h2>
-              <UiCard class="overflow-hidden">
-                <TrafficEntityTable
-                  :items="inboundTraffic?.items ?? []"
-                  :is-loading="isInboundTrafficLoading"
-                  empty-text="No inbound traffic recorded yet"
                 />
               </UiCard>
             </div>

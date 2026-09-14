@@ -30,8 +30,7 @@ func NewSubscriptionHandler(
 }
 
 type getSubscriptionInput struct {
-	Token     string `path:"token" maxLength:"128"`
-	InboundID string `query:"inbound_id" maxLength:"128"`
+	Token string `path:"token" maxLength:"128"`
 }
 
 type getSubscriptionOutput struct {
@@ -50,7 +49,7 @@ func (h *SubscriptionHandler) Register(api huma.API) {
 	huma.Get(api, "/v1/sub/{token}/surge", h.getSurgeSubscription)
 }
 
-type subscriptionBuilder func(ctx context.Context, token string, inboundID string) (string, error)
+type subscriptionBuilder func(ctx context.Context, token string) (string, error)
 
 const (
 	contentTypeTextPlain       = "text/plain"
@@ -117,7 +116,7 @@ func (h *SubscriptionHandler) buildSubscription(
 		}
 	}
 
-	payload, err := build(ctx, token, input.InboundID)
+	payload, err := build(ctx, token)
 	if err != nil {
 		if errors.Is(err, domain.ErrUnauthorized) {
 			return nil, huma.Error401Unauthorized("invalid or expired token")

@@ -2,9 +2,7 @@ package http
 
 import (
 	"context"
-	"errors"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -14,22 +12,23 @@ import (
 )
 
 type InboundManagementHandler struct {
-	inboundRepo domain.InboundRepository
-	runtime     RuntimeController
-	logger      *slog.Logger
+	inbounds []domain.Inbound
+	runtime  RuntimeController
+	logger   *slog.Logger
 }
 
 func NewInboundManagementHandler(
-	inboundRepo domain.InboundRepository,
+	inbounds []domain.Inbound,
 	runtime RuntimeController,
 	logger *slog.Logger,
 ) *InboundManagementHandler {
-	return &InboundManagementHandler{inboundRepo: inboundRepo, runtime: runtime, logger: logger}
+	return &InboundManagementHandler{inbounds: inbounds, runtime: runtime, logger: logger}
 }
 
 type InboundItem struct {
 	ID           string    `json:"id"`
 	Name         string    `json:"name"`
+	Type         string    `json:"type"`
 	Address      string    `json:"address"`
 	Port         int       `json:"port"`
 	SNI          string    `json:"sni"`
@@ -44,49 +43,8 @@ type InboundItem struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
-type CreateInboundInput struct {
-	Body struct {
-		Name         string `json:"name" required:"true" maxLength:"100"`
-		Address      string `json:"address" required:"false"`
-		Port         int    `json:"port" required:"false"`
-		SNI          string `json:"sni" required:"false"`
-		Handshake    string `json:"handshake" required:"false"`
-		PrivateKey   string `json:"private_key" required:"false"`
-		ShortID      string `json:"short_id" required:"false"`
-		Fingerprint  string `json:"fingerprint" required:"false"`
-		NameTemplate string `json:"name_template" required:"false"`
-	}
-}
-
-type CreateInboundOutput struct {
-	Body InboundItem
-}
-
 type ListInboundsOutput struct {
 	Body []InboundItem `json:"inbounds"`
-}
-
-type UpdateInboundInput struct {
-	ID   string `path:"id" required:"true"`
-	Body struct {
-		Name         string `json:"name" required:"true" maxLength:"100"`
-		Address      string `json:"address" required:"false"`
-		Port         int    `json:"port" required:"false"`
-		SNI          string `json:"sni" required:"false"`
-		Handshake    string `json:"handshake" required:"false"`
-		PrivateKey   string `json:"private_key" required:"false"`
-		ShortID      string `json:"short_id" required:"false"`
-		Fingerprint  string `json:"fingerprint" required:"false"`
-		NameTemplate string `json:"name_template" required:"false"`
-	}
-}
-
-type DeleteInboundInput struct {
-	ID string `path:"id" required:"true"`
-}
-
-type EnableInboundInput struct {
-	ID string `path:"id" required:"true"`
 }
 
 type GenerateKeypairOutput struct {
@@ -97,12 +55,8 @@ type GenerateKeypairOutput struct {
 }
 
 func (h *InboundManagementHandler) Register(api huma.API) {
-	huma.Post(api, "/v1/inbounds", h.CreateInbound)
 	huma.Get(api, "/v1/inbounds", h.ListInbounds)
 	huma.Get(api, "/v1/inbounds/keypair", h.GenerateKeypair)
-	huma.Put(api, "/v1/inbounds/{id}", h.UpdateInbound)
-	huma.Delete(api, "/v1/inbounds/{id}", h.DeleteInbound)
-	huma.Post(api, "/v1/inbounds/{id}/enable", h.EnableInbound)
 }
 
 func (h *InboundManagementHandler) GenerateKeypair(ctx context.Context, _ *struct{}) (*GenerateKeypairOutput, error) {
@@ -117,92 +71,9 @@ func (h *InboundManagementHandler) GenerateKeypair(ctx context.Context, _ *struc
 	return out, nil
 }
 
-func (h *InboundManagementHandler) CreateInbound(ctx context.Context, input *CreateInboundInput) (*CreateInboundOutput, error) {
-	input.Body.Name = strings.TrimSpace(input.Body.Name)
-	if input.Body.Name == "" {
-		return nil, huma.Error400BadRequest("name is required")
-	}
-
-	id, err := domain.GenerateInboundID()
-	if err != nil {
-		h.logger.Error("failed to generate inbound id", slog.String("error", err.Error()))
-		return nil, huma.Error500InternalServerError("failed to create inbound")
-	}
-
-	priv := input.Body.PrivateKey
-	pub := ""
-	if priv != "" {
-		pub, err = config.DeriveRealityPublicKey(priv)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid private key")
-		}
-	} else {
-		priv, pub, err = config.GenerateRealityKeyPair()
-		if err != nil {
-			h.logger.Error("failed to generate reality key pair", slog.String("error", err.Error()))
-			return nil, huma.Error500InternalServerError("failed to generate reality key pair")
-		}
-	}
-
-	shortID := strings.TrimSpace(input.Body.ShortID)
-	if shortID == "" {
-		shortID, err = config.GenerateRealityShortID()
-		if err != nil {
-			h.logger.Error("failed to generate reality short_id", slog.String("error", err.Error()))
-			return nil, huma.Error500InternalServerError("failed to generate reality short_id")
-		}
-	}
-
-	now := time.Now().UTC()
-	inbound := domain.Inbound{
-		ID:           id,
-		Name:         input.Body.Name,
-		Address:      strings.TrimSpace(input.Body.Address),
-		Port:         input.Body.Port,
-		SNI:          strings.TrimSpace(input.Body.SNI),
-		Handshake:    strings.TrimSpace(input.Body.Handshake),
-		PrivateKey:   priv,
-		PublicKey:    pub,
-		ShortID:      shortID,
-		Fingerprint:  strings.TrimSpace(input.Body.Fingerprint),
-		NameTemplate: input.Body.NameTemplate,
-		CreatedAt:    now,
-		UpdatedAt:    now,
-	}
-	if inbound.Port == 0 {
-		inbound.Port = 443
-	}
-	if inbound.Fingerprint == "" {
-		inbound.Fingerprint = "chrome"
-	}
-	if inbound.Handshake == "" {
-		inbound.Handshake = inbound.SNI
-	}
-
-	if err := h.inboundRepo.Create(ctx, inbound); err != nil {
-		h.logger.Error("failed to create inbound", slog.String("error", err.Error()))
-		return nil, huma.Error500InternalServerError("failed to create inbound")
-	}
-
-	if err := h.runtime.ForceSync(); err != nil {
-		h.logger.Warn("failed to sync after inbound creation", slog.String("error", err.Error()))
-	}
-
-	out := &CreateInboundOutput{}
-	status, reason := h.runtime.InboundStatus(inbound.ID)
-	out.Body = toInboundItem(inbound, status, reason)
-	return out, nil
-}
-
 func (h *InboundManagementHandler) ListInbounds(ctx context.Context, _ *struct{}) (*ListInboundsOutput, error) {
-	inbounds, err := h.inboundRepo.List(ctx)
-	if err != nil {
-		h.logger.Error("failed to list inbounds", slog.String("error", err.Error()))
-		return nil, huma.Error500InternalServerError("failed to list inbounds")
-	}
-
-	items := make([]InboundItem, 0, len(inbounds))
-	for _, inbound := range inbounds {
+	items := make([]InboundItem, 0, len(h.inbounds))
+	for _, inbound := range h.inbounds {
 		status, reason := h.runtime.InboundStatus(inbound.ID)
 		items = append(items, toInboundItem(inbound, status, reason))
 	}
@@ -212,106 +83,11 @@ func (h *InboundManagementHandler) ListInbounds(ctx context.Context, _ *struct{}
 	return out, nil
 }
 
-func (h *InboundManagementHandler) UpdateInbound(ctx context.Context, input *UpdateInboundInput) (*struct{}, error) {
-	input.Body.Name = strings.TrimSpace(input.Body.Name)
-	if input.Body.Name == "" {
-		return nil, huma.Error400BadRequest("name is required")
-	}
-
-	inbound, err := h.inboundRepo.FindByID(ctx, input.ID)
-	if err != nil {
-		if errors.Is(err, domain.ErrInboundNotFound) {
-			return nil, huma.Error404NotFound("inbound not found")
-		}
-		h.logger.Error("failed to find inbound", slog.String("id", input.ID), slog.String("error", err.Error()))
-		return nil, huma.Error500InternalServerError("failed to find inbound")
-	}
-
-	inbound.Name = input.Body.Name
-	inbound.Address = strings.TrimSpace(input.Body.Address)
-	inbound.Port = input.Body.Port
-	inbound.SNI = strings.TrimSpace(input.Body.SNI)
-	inbound.Handshake = strings.TrimSpace(input.Body.Handshake)
-	if strings.TrimSpace(input.Body.ShortID) == "" && inbound.ShortID == "" {
-		shortID, err := config.GenerateRealityShortID()
-		if err != nil {
-			h.logger.Error("failed to generate reality short_id", slog.String("error", err.Error()))
-			return nil, huma.Error500InternalServerError("failed to generate reality short_id")
-		}
-		inbound.ShortID = shortID
-	} else if strings.TrimSpace(input.Body.ShortID) != "" {
-		inbound.ShortID = strings.TrimSpace(input.Body.ShortID)
-	}
-	inbound.Fingerprint = strings.TrimSpace(input.Body.Fingerprint)
-	inbound.NameTemplate = input.Body.NameTemplate
-	if inbound.Port == 0 {
-		inbound.Port = 443
-	}
-	if inbound.Fingerprint == "" {
-		inbound.Fingerprint = "chrome"
-	}
-	if inbound.Handshake == "" {
-		inbound.Handshake = inbound.SNI
-	}
-
-	if input.Body.PrivateKey != "" && input.Body.PrivateKey != inbound.PrivateKey {
-		pub, err := config.DeriveRealityPublicKey(input.Body.PrivateKey)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid private key")
-		}
-		inbound.PrivateKey = input.Body.PrivateKey
-		inbound.PublicKey = pub
-	}
-
-	if err := h.inboundRepo.Update(ctx, inbound); err != nil {
-		h.logger.Error("failed to update inbound", slog.String("id", input.ID), slog.String("error", err.Error()))
-		return nil, huma.Error500InternalServerError("failed to update inbound")
-	}
-
-	if err := h.runtime.ForceSync(); err != nil {
-		h.logger.Warn("failed to sync after inbound update", slog.String("id", input.ID), slog.String("error", err.Error()))
-	}
-
-	return nil, nil
-}
-
-func (h *InboundManagementHandler) EnableInbound(ctx context.Context, input *EnableInboundInput) (*struct{}, error) {
-	if _, err := h.inboundRepo.FindByID(ctx, input.ID); err != nil {
-		if errors.Is(err, domain.ErrInboundNotFound) {
-			return nil, huma.Error404NotFound("inbound not found")
-		}
-		h.logger.Error("failed to find inbound", slog.String("id", input.ID), slog.String("error", err.Error()))
-		return nil, huma.Error500InternalServerError("failed to enable inbound")
-	}
-
-	if err := h.runtime.ForceSync(); err != nil {
-		h.logger.Error("failed to enable inbound", slog.String("id", input.ID), slog.String("error", err.Error()))
-		return nil, huma.Error500InternalServerError("failed to enable inbound")
-	}
-
-	return nil, nil
-}
-
-func (h *InboundManagementHandler) DeleteInbound(ctx context.Context, input *DeleteInboundInput) (*struct{}, error) {
-	if err := h.inboundRepo.Delete(ctx, input.ID); err != nil {
-		if errors.Is(err, domain.ErrInboundNotFound) {
-			return nil, huma.Error404NotFound("inbound not found")
-		}
-		h.logger.Error("failed to delete inbound", slog.String("id", input.ID), slog.String("error", err.Error()))
-		return nil, huma.Error500InternalServerError("failed to delete inbound")
-	}
-
-	if err := h.runtime.ForceSync(); err != nil {
-		h.logger.Warn("failed to sync after inbound deletion", slog.String("id", input.ID), slog.String("error", err.Error()))
-	}
-
-	return nil, nil
-}
-
 func toInboundItem(inbound domain.Inbound, status, reason string) InboundItem {
 	return InboundItem{
 		ID:           inbound.ID,
 		Name:         inbound.Name,
+		Type:         inbound.Type,
 		Address:      inbound.Address,
 		Port:         inbound.Port,
 		SNI:          inbound.SNI,

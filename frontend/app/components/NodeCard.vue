@@ -2,7 +2,6 @@
 import { computed } from 'vue'
 import { toast } from 'vue-sonner'
 import type { Node } from '~/utils/schemas/node'
-import type { Inbound } from '~/utils/schemas/inbound'
 import { parseVlessUrl } from '~/utils/vless'
 import UiCard from '~/components/ui/card/card.vue'
 import CardContent from '~/components/ui/card/CardContent.vue'
@@ -95,7 +94,6 @@ function getFieldMeta(label: string): FieldMeta {
 
 const props = defineProps<{
   node: Node
-  inbounds?: Inbound[]
   groupLabel?: string
   deleting?: boolean
   showActions?: boolean
@@ -113,13 +111,6 @@ const parsed = computed(() => {
   return parseVlessUrl(props.node.url)
 })
 
-const selfInbound = computed(() => {
-  if (!props.node.is_self || !props.inbounds || props.inbounds.length === 0) {
-    return null
-  }
-  return props.inbounds[0]
-})
-
 async function copyLink(url: string) {
   try {
     await navigator.clipboard.writeText(url)
@@ -130,25 +121,21 @@ async function copyLink(url: string) {
 }
 
 function buildFields(): Field[] {
-  const ib = selfInbound.value
   const p = parsed.value
 
   if (props.node.is_self) {
     return [
-      { label: 'Host', value: ib?.address || '—' },
-      { label: 'Port', value: ib ? String(ib.port || 443) : '—' },
+      { label: 'Host', value: '—' },
+      { label: 'Port', value: '—' },
       { label: 'UUID', value: '—' },
       { label: 'Security', value: 'reality' },
       { label: 'Encryption', value: 'none' },
       { label: 'Flow', value: 'xtls-rprx-vision' },
       { label: 'Network', value: 'tcp' },
-      { label: 'SNI', value: ib?.sni || '—' },
-      {
-        label: 'Fingerprint',
-        value: ib && ib.fingerprint !== 'random' ? ib.fingerprint : '—',
-      },
-      { label: 'Public Key', value: ib?.public_key || '—' },
-      { label: 'Short ID', value: ib?.short_id || '—' },
+      { label: 'SNI', value: '—' },
+      { label: 'Fingerprint', value: '—' },
+      { label: 'Public Key', value: '—' },
+      { label: 'Short ID', value: '—' },
     ]
   }
 

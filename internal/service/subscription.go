@@ -31,6 +31,7 @@ const (
 
 // HubConfig describes the Hub endpoint clients connect to.
 type HubConfig struct {
+	Type         string
 	Port         int
 	SNI          string
 	Handshake    string
@@ -42,12 +43,18 @@ type HubConfig struct {
 	tagIndex     int
 }
 
+// TrafficSnapshotProvider provides real-time traffic snapshot data.
+// Implemented by domain.RuntimeController.
+type TrafficSnapshotProvider interface {
+	TrafficSnapshot() *domain.TrafficSnapshot
+}
+
 // SubscriptionService prepares subscription payloads.
 type SubscriptionService struct {
 	repo         domain.NodeRepository
 	tokenRepo    domain.TokenRepository
 	groupRepo    domain.GroupRepository
-	inboundRepo  domain.InboundRepository
+	inbounds     []domain.Inbound
 	runtime      TrafficSnapshotProvider
 	externalHost string
 	logger       *slog.Logger
@@ -61,13 +68,11 @@ type cachedGroupNames struct {
 }
 
 // NewSubscriptionService constructs a subscription service.
-// runtime is optional — when non-nil, inbounds are sorted by active
-// connection count (least loaded first) in subscription responses.
 func NewSubscriptionService(
 	repo domain.NodeRepository,
 	tokenRepo domain.TokenRepository,
 	groupRepo domain.GroupRepository,
-	inboundRepo domain.InboundRepository,
+	inbounds []domain.Inbound,
 	runtime TrafficSnapshotProvider,
 	externalHost string,
 	logger *slog.Logger,
@@ -76,7 +81,7 @@ func NewSubscriptionService(
 		repo:         repo,
 		tokenRepo:    tokenRepo,
 		groupRepo:    groupRepo,
-		inboundRepo:  inboundRepo,
+		inbounds:     inbounds,
 		runtime:      runtime,
 		externalHost: externalHost,
 		logger:       logger,
@@ -85,9 +90,7 @@ func NewSubscriptionService(
 }
 
 // BuildBase64VLESS returns base64 encoded list of Hub-pointing VLESS URLs.
-// If inboundID is empty, uses token.InboundIDs when present (mixing multiple
-// inbounds), otherwise falls back to all configured inbounds.
-func (s *SubscriptionService) BuildBase64VLESS(ctx context.Context, token string, inboundID string) (string, error) {
+func (s *SubscriptionService) BuildBase64VLESS(ctx context.Context, token string) (string, error) {
 	now := time.Now().UTC()
 
 	tokenInfo, err := s.tokenRepo.GetTokenByPlain(ctx, token, now)
@@ -114,19 +117,7 @@ func (s *SubscriptionService) BuildBase64VLESS(ctx context.Context, token string
 		return "", err
 	}
 
-	var hubs []HubConfig
-	if inboundID != "" {
-		hub, err := s.resolveInbound(ctx, inboundID)
-		if err != nil {
-			return "", err
-		}
-		hubs = []HubConfig{hub}
-	} else {
-		hubs, err = s.resolveInboundsForToken(ctx, tokenInfo)
-		if err != nil {
-			return "", err
-		}
-	}
+	groupHubs := s.buildGroupHubs(groupSettings)
 
 	selectedNodes := s.getSelectedNodes(tokenInfo, nodes, groupSettings, groupNames)
 	var allURLs []string
@@ -137,7 +128,10 @@ func (s *SubscriptionService) BuildBase64VLESS(ctx context.Context, token string
 			}
 		}
 		if s.nodeUsesHub(node, groupSettings, tokenInfo) {
-			hub := s.pickHubForNode(hubs)
+			hub, ok := hubForNode(node, groupSettings, groupHubs)
+			if !ok {
+				continue
+			}
 			url := s.buildV2RayURL(node, groupNames, hub, tokenInfo)
 			if url != "" {
 				allURLs = append(allURLs, url)
@@ -165,64 +159,51 @@ func filterActiveNodes(nodes []domain.Node, now time.Time) []domain.Node {
 	return active
 }
 
-func (s *SubscriptionService) resolveInbound(ctx context.Context, inboundID string) (HubConfig, error) {
-	inbounds, err := s.inboundRepo.List(ctx)
-	if err != nil {
-		return HubConfig{}, fmt.Errorf("loading inbounds: %w", err)
-	}
-	if len(inbounds) == 0 {
-		return HubConfig{}, nil
-	}
-
-	if inboundID == "" {
-		return toHubConfig(inbounds[0], 0), nil
-	}
-
-	for i, inbound := range inbounds {
-		if inbound.ID == inboundID {
-			return toHubConfig(inbound, i), nil
+func (s *SubscriptionService) resolveInboundForGroup(groupInboundID string) (HubConfig, bool) {
+	for i, inbound := range s.inbounds {
+		if inbound.ID == groupInboundID {
+			return toHubConfig(inbound, i), true
 		}
 	}
-	return HubConfig{}, nil
+	return HubConfig{}, false
 }
 
-func (s *SubscriptionService) resolveInboundsForToken(ctx context.Context, token domain.Token) ([]HubConfig, error) {
-	inbounds, err := s.inboundRepo.List(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("loading inbounds: %w", err)
-	}
-	if len(inbounds) == 0 {
-		return []HubConfig{}, nil
-	}
-
-	// If token has no inbound restrictions, return all inbounds.
-	if len(token.InboundIDs) == 0 {
-		hubs := make([]HubConfig, 0, len(inbounds))
-		for i, inbound := range inbounds {
-			hubs = append(hubs, toHubConfig(inbound, i))
+func (s *SubscriptionService) buildGroupHubs(groupSettings map[string]domain.Group) map[string]HubConfig {
+	hubs := make(map[string]HubConfig, len(groupSettings))
+	for groupID, group := range groupSettings {
+		if group.InboundID == "" {
+			continue
 		}
-		return hubs, nil
+		hub, ok := s.resolveInboundForGroup(group.InboundID)
+		if !ok {
+			continue
+		}
+		hubs[groupID] = hub
 	}
+	return hubs
+}
 
-	allowed := make(map[string]struct{}, len(token.InboundIDs))
-	for _, id := range token.InboundIDs {
-		allowed[id] = struct{}{}
-	}
-
-	var hubs []HubConfig
-	for i, inbound := range inbounds {
-		if _, ok := allowed[inbound.ID]; ok {
-			hubs = append(hubs, toHubConfig(inbound, i))
+func hubForNode(
+	node domain.Node,
+	groupSettings map[string]domain.Group,
+	groupHubs map[string]HubConfig,
+) (HubConfig, bool) {
+	for _, groupID := range node.GroupIDs {
+		settings, ok := groupSettings[groupID]
+		if !ok || settings.ShowOrigins {
+			continue
+		}
+		hub, ok := groupHubs[groupID]
+		if ok {
+			return hub, true
 		}
 	}
-	if len(hubs) == 0 {
-		return nil, fmt.Errorf("token has inbound restrictions but none match configured inbounds")
-	}
-	return hubs, nil
+	return HubConfig{}, false
 }
 
 func toHubConfig(inbound domain.Inbound, index int) HubConfig {
 	return HubConfig{
+		Type:         inbound.Type,
 		Port:         inbound.Port,
 		SNI:          inbound.SNI,
 		Handshake:    inbound.Handshake,
@@ -483,7 +464,9 @@ type ClashMetaProxy struct {
 	Type        string            `yaml:"type"`
 	Server      string            `yaml:"server"`
 	Port        int               `yaml:"port"`
-	UUID        string            `yaml:"uuid"`
+	UUID        string            `yaml:"uuid,omitempty"`
+	Username    string            `yaml:"username,omitempty"`
+	Password    string            `yaml:"password,omitempty"`
 	UDP         bool              `yaml:"udp"`
 	Flow        string            `yaml:"flow,omitempty"`
 	Network     string            `yaml:"network,omitempty"`
@@ -519,7 +502,9 @@ type SingBoxOutbound struct {
 	Tag            string      `json:"tag"`
 	Server         string      `json:"server"`
 	ServerPort     int         `json:"server_port"`
-	UUID           string      `json:"uuid"`
+	UUID           string      `json:"uuid,omitempty"`
+	Username       string      `json:"username,omitempty"`
+	Password       string      `json:"password,omitempty"`
 	Flow           string      `json:"flow,omitempty"`
 	Network        string      `json:"network,omitempty"`
 	TLS            *SingBoxTLS `json:"tls,omitempty"`
@@ -565,7 +550,7 @@ type SingBoxDNS struct {
 }
 
 // BuildClashMetaYAML generates Clash Meta YAML subscription.
-func (s *SubscriptionService) BuildClashMetaYAML(ctx context.Context, token string, inboundID string) (string, error) {
+func (s *SubscriptionService) BuildClashMetaYAML(ctx context.Context, token string) (string, error) {
 	now := time.Now().UTC()
 
 	tokenInfo, err := s.tokenRepo.GetTokenByPlain(ctx, token, now)
@@ -591,19 +576,7 @@ func (s *SubscriptionService) BuildClashMetaYAML(ctx context.Context, token stri
 		return "", err
 	}
 
-	var hubs []HubConfig
-	if inboundID != "" {
-		hub, err := s.resolveInbound(ctx, inboundID)
-		if err != nil {
-			return "", err
-		}
-		hubs = []HubConfig{hub}
-	} else {
-		hubs, err = s.resolveInboundsForToken(ctx, tokenInfo)
-		if err != nil {
-			return "", err
-		}
-	}
+	groupHubs := s.buildGroupHubs(groupSettings)
 
 	config := ClashMetaConfig{
 		Proxies:     []ClashMetaProxy{},
@@ -612,7 +585,7 @@ func (s *SubscriptionService) BuildClashMetaYAML(ctx context.Context, token stri
 
 	selectedNodes := s.getSelectedNodes(tokenInfo, nodes, groupSettings, groupNames)
 	var proxyNames []string
-	config.Proxies, proxyNames = s.buildClashMetaProxies(selectedNodes, groupNames, hubs, tokenInfo, groupSettings)
+	config.Proxies, proxyNames = s.buildClashMetaProxies(selectedNodes, groupNames, groupHubs, tokenInfo, groupSettings)
 
 	if len(config.Proxies) > 0 {
 		config.ProxyGroups = []ClashProxyGroup{
@@ -638,7 +611,7 @@ func (s *SubscriptionService) BuildClashMetaYAML(ctx context.Context, token stri
 }
 
 // BuildSingBoxJSON generates Sing-box JSON subscription.
-func (s *SubscriptionService) BuildSingBoxJSON(ctx context.Context, token string, inboundID string) (string, error) {
+func (s *SubscriptionService) BuildSingBoxJSON(ctx context.Context, token string) (string, error) {
 	now := time.Now().UTC()
 
 	tokenInfo, err := s.tokenRepo.GetTokenByPlain(ctx, token, now)
@@ -664,19 +637,7 @@ func (s *SubscriptionService) BuildSingBoxJSON(ctx context.Context, token string
 		return "", err
 	}
 
-	var hubs []HubConfig
-	if inboundID != "" {
-		hub, err := s.resolveInbound(ctx, inboundID)
-		if err != nil {
-			return "", err
-		}
-		hubs = []HubConfig{hub}
-	} else {
-		hubs, err = s.resolveInboundsForToken(ctx, tokenInfo)
-		if err != nil {
-			return "", err
-		}
-	}
+	groupHubs := s.buildGroupHubs(groupSettings)
 
 	config := SingBoxConfig{
 		Outbounds: []SingBoxOutbound{},
@@ -699,7 +660,7 @@ func (s *SubscriptionService) BuildSingBoxJSON(ctx context.Context, token string
 	}
 
 	selectedNodes := s.getSelectedNodes(tokenInfo, nodes, groupSettings, groupNames)
-	config.Outbounds = s.buildSingBoxOutbounds(selectedNodes, groupNames, hubs, tokenInfo, groupSettings)
+	config.Outbounds = s.buildSingBoxOutbounds(selectedNodes, groupNames, groupHubs, tokenInfo, groupSettings)
 
 	if len(config.Outbounds) > 0 {
 		config.Route.Rules[0]["outbound"] = config.Outbounds[0].Tag
@@ -714,7 +675,7 @@ func (s *SubscriptionService) BuildSingBoxJSON(ctx context.Context, token string
 }
 
 // BuildV2RayBase64 generates V2Ray Base64 subscription (list of vless:// URIs).
-func (s *SubscriptionService) BuildV2RayBase64(ctx context.Context, token string, inboundID string) (string, error) {
+func (s *SubscriptionService) BuildV2RayBase64(ctx context.Context, token string) (string, error) {
 	now := time.Now().UTC()
 
 	tokenInfo, err := s.tokenRepo.GetTokenByPlain(ctx, token, now)
@@ -740,19 +701,7 @@ func (s *SubscriptionService) BuildV2RayBase64(ctx context.Context, token string
 		return "", err
 	}
 
-	var hubs []HubConfig
-	if inboundID != "" {
-		hub, err := s.resolveInbound(ctx, inboundID)
-		if err != nil {
-			return "", err
-		}
-		hubs = []HubConfig{hub}
-	} else {
-		hubs, err = s.resolveInboundsForToken(ctx, tokenInfo)
-		if err != nil {
-			return "", err
-		}
-	}
+	groupHubs := s.buildGroupHubs(groupSettings)
 
 	selectedNodes := s.getSelectedNodes(tokenInfo, nodes, groupSettings, groupNames)
 	var allURLs []string
@@ -763,7 +712,10 @@ func (s *SubscriptionService) BuildV2RayBase64(ctx context.Context, token string
 			}
 		}
 		if s.nodeUsesHub(node, groupSettings, tokenInfo) {
-			hub := s.pickHubForNode(hubs)
+			hub, ok := hubForNode(node, groupSettings, groupHubs)
+			if !ok {
+				continue
+			}
 			url := s.buildV2RayURL(node, groupNames, hub, tokenInfo)
 			if url != "" {
 				allURLs = append(allURLs, url)
@@ -780,7 +732,7 @@ func (s *SubscriptionService) BuildV2RayBase64(ctx context.Context, token string
 }
 
 // BuildSurgeConf generates Surge configuration.
-func (s *SubscriptionService) BuildSurgeConf(ctx context.Context, token string, inboundID string) (string, error) {
+func (s *SubscriptionService) BuildSurgeConf(ctx context.Context, token string) (string, error) {
 	now := time.Now().UTC()
 
 	tokenInfo, err := s.tokenRepo.GetTokenByPlain(ctx, token, now)
@@ -806,19 +758,7 @@ func (s *SubscriptionService) BuildSurgeConf(ctx context.Context, token string, 
 		return "", err
 	}
 
-	var hubs []HubConfig
-	if inboundID != "" {
-		hub, err := s.resolveInbound(ctx, inboundID)
-		if err != nil {
-			return "", err
-		}
-		hubs = []HubConfig{hub}
-	} else {
-		hubs, err = s.resolveInboundsForToken(ctx, tokenInfo)
-		if err != nil {
-			return "", err
-		}
-	}
+	groupHubs := s.buildGroupHubs(groupSettings)
 
 	var lines []string
 	lines = append(lines, "[Proxy]")
@@ -834,7 +774,10 @@ func (s *SubscriptionService) BuildSurgeConf(ctx context.Context, token string, 
 			}
 		}
 		if s.nodeUsesHub(node, groupSettings, tokenInfo) {
-			hub := s.pickHubForNode(hubs)
+			hub, ok := hubForNode(node, groupSettings, groupHubs)
+			if !ok {
+				continue
+			}
 			line, name := s.buildSurgeProxy(node, groupNames, hub, tokenInfo)
 			if line != "" {
 				lines = append(lines, line)
@@ -855,7 +798,7 @@ func (s *SubscriptionService) BuildSurgeConf(ctx context.Context, token string, 
 func (s *SubscriptionService) buildClashMetaProxies(
 	nodes []domain.Node,
 	groupNames map[string]string,
-	hubs []HubConfig,
+	groupHubs map[string]HubConfig,
 	token domain.Token,
 	groupSettings map[string]domain.Group,
 ) ([]ClashMetaProxy, []string) {
@@ -870,7 +813,10 @@ func (s *SubscriptionService) buildClashMetaProxies(
 			}
 		}
 		if s.nodeUsesHub(node, groupSettings, token) {
-			hub := s.pickHubForNode(hubs)
+			hub, ok := hubForNode(node, groupSettings, groupHubs)
+			if !ok {
+				continue
+			}
 			proxy, name := s.buildClashMetaProxy(node, groupNames, hub, token)
 			if name != "" {
 				proxies = append(proxies, proxy)
@@ -884,7 +830,7 @@ func (s *SubscriptionService) buildClashMetaProxies(
 func (s *SubscriptionService) buildSingBoxOutbounds(
 	nodes []domain.Node,
 	groupNames map[string]string,
-	hubs []HubConfig,
+	groupHubs map[string]HubConfig,
 	token domain.Token,
 	groupSettings map[string]domain.Group,
 ) []SingBoxOutbound {
@@ -897,7 +843,10 @@ func (s *SubscriptionService) buildSingBoxOutbounds(
 			}
 		}
 		if s.nodeUsesHub(node, groupSettings, token) {
-			hub := s.pickHubForNode(hubs)
+			hub, ok := hubForNode(node, groupSettings, groupHubs)
+			if !ok {
+				continue
+			}
 			outbounds = append(outbounds, s.buildSingBoxOutbound(node, groupNames, hub, token))
 		}
 	}
@@ -986,6 +935,10 @@ func (s *SubscriptionService) buildClashMetaProxy(
 	hub HubConfig,
 	token domain.Token,
 ) (ClashMetaProxy, string) {
+	if hub.Type == domain.InboundTypeMixed {
+		return s.buildMixedClashMetaProxy(node, groupNames, hub, token)
+	}
+
 	remark, _ := s.buildNodeRemark(node, resolveGroupLabel(groupNames, getNodePrimaryGroup(node)), hub, token)
 	if remark == "" {
 		remark = node.ID
@@ -1037,6 +990,10 @@ func (s *SubscriptionService) buildSingBoxOutbound(
 	hub HubConfig,
 	token domain.Token,
 ) SingBoxOutbound {
+	if hub.Type == domain.InboundTypeMixed {
+		return s.buildMixedSingBoxOutbound(node, groupNames, hub, token)
+	}
+
 	remark, _ := s.buildNodeRemark(node, resolveGroupLabel(groupNames, getNodePrimaryGroup(node)), hub, token)
 	if remark == "" {
 		remark = node.ID
@@ -1088,6 +1045,10 @@ func (s *SubscriptionService) buildSingBoxOutbound(
 }
 
 func (s *SubscriptionService) buildV2RayURL(node domain.Node, groupNames map[string]string, hub HubConfig, token domain.Token) string {
+	if hub.Type == domain.InboundTypeMixed {
+		return s.buildMixedV2RayURL(node, groupNames, hub, token)
+	}
+
 	remark, ok := s.buildNodeRemark(node, resolveGroupLabel(groupNames, getNodePrimaryGroup(node)), hub, token)
 	if !ok {
 		return ""
@@ -1103,6 +1064,10 @@ func (s *SubscriptionService) buildSurgeProxy(
 	hub HubConfig,
 	token domain.Token,
 ) (string, string) {
+	if hub.Type == domain.InboundTypeMixed {
+		return s.buildMixedSurgeProxy(node, groupNames, hub, token)
+	}
+
 	remark, ok := s.buildNodeRemark(node, resolveGroupLabel(groupNames, getNodePrimaryGroup(node)), hub, token)
 	if !ok {
 		return "", ""

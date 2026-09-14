@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
-import { Pencil, Hash, Monitor, Link, Tags } from 'lucide-vue-next'
+import { Monitor, Link, Tags, FolderClosed } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import UiPageLayout from '~/components/ui/page-layout/page-layout.vue'
 import UiButton from '~/components/ui/button/button.vue'
@@ -17,19 +17,14 @@ import SheetDescription from '~/components/ui/sheet/SheetDescription.vue'
 import { useInfiniteNodes } from '~/composables/nodes/useInfiniteNodes'
 import { useGroups } from '~/composables/groups/useGroups'
 import type { Node } from '~/utils/schemas/node'
-import type { TopUpInput } from '~/utils/schemas/group'
 import { createNode, deleteNode, updateNode, batchDeleteNodes } from '~/utils/services/node'
-import { createGroup, defaultTopUpForm, buildTopUpInput } from '~/utils/services/group'
-import type { TopUpFormValues } from '~/utils/services/group'
 import { resolveCreateNodeErrorMessage } from '~/utils/node'
-import TopUpFields from '~/components/TopUpFields.vue'
-import { useInbounds } from '~/composables/inbounds/useInbounds'
 import VlessUrlPreview from '~/components/VlessUrlPreview.vue'
 import UiSelect from '~/components/ui/select/select.vue'
 import EditNodeDialog from '~/components/EditNodeDialog.vue'
 import ImportNodesMenu from '~/components/ImportNodesMenu.vue'
-import GroupsTopUpStatusDialog from '~/components/GroupsTopUpStatusDialog.vue'
 import CreateNodesMenu from '~/components/CreateNodesMenu.vue'
+import GroupsPanel from '~/components/GroupsPanel.vue'
 
 definePageMeta({ layout: 'default' })
 
@@ -39,7 +34,6 @@ useHead({
 
 const queryClient = useQueryClient()
 const { confirm } = useConfirm()
-const { data: inbounds } = useInbounds()
 const groupFilter = ref<string>('')
 
 const {
@@ -73,46 +67,19 @@ const hasSelfNode = computed<boolean>(() => {
   return list.some((node) => node.is_self)
 })
 
-const showCreateGroupDialog = ref(false)
+const showGroupsPanel = ref(false)
 const showCreateNodeDialog = ref(false)
-const groupNameInput = ref('')
-const groupRandomEnabledInput = ref(false)
-const groupRandomLimitInput = ref<string>('')
-const groupShowOriginsInput = ref(false)
 const nodeURLInput = ref('')
 const nodeGroupIDsInput = ref<string[]>([])
 const nodeIsSelfInput = ref(false)
 const nodeExpiresAt = ref<string | undefined>(undefined)
 const createNodeErrorMessage = ref('')
-const isCreateGroupSubmitting = ref(false)
 const isCreateNodeSubmitting = ref(false)
-const showTopUp = ref(false)
-const topUpForm = ref<TopUpFormValues>(defaultTopUpForm())
 const deletingNodeIDs = ref<Set<string>>(new Set())
 const selectedNodeIDs = ref<Set<string>>(new Set())
 
 const showEditNodeDialog = ref(false)
 const editNodeTarget = ref<Node | null>(null)
-
-const createGroupMutation = useMutation({
-  mutationFn: (payload: {
-    name: string
-    random_enabled: boolean
-    random_limit: number | null
-    show_origins: boolean
-    top_up?: TopUpInput
-  }) => createGroup(payload),
-  onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: ['groups'] })
-    showCreateGroupDialog.value = false
-    groupNameInput.value = ''
-    groupRandomEnabledInput.value = false
-    groupRandomLimitInput.value = ''
-    groupShowOriginsInput.value = false
-    showTopUp.value = false
-    topUpForm.value = defaultTopUpForm()
-  },
-})
 
 const createNodeMutation = useMutation({
   mutationFn: (payload: {
@@ -159,30 +126,6 @@ const filteredFlatNodes = computed<Node[]>(() => {
       .includes(searchValue)
   })
 })
-
-function submitCreateGroup() {
-  const name = groupNameInput.value.trim()
-  if (!name || isCreateGroupSubmitting.value) return
-  isCreateGroupSubmitting.value = true
-  createGroupMutation.mutate(
-    {
-      name,
-      random_enabled: groupRandomEnabledInput.value,
-      random_limit: (() => {
-        if (!groupRandomLimitInput.value) return null
-        const n = parseInt(groupRandomLimitInput.value)
-        return Number.isNaN(n) || n <= 0 ? null : n
-      })(),
-      show_origins: groupShowOriginsInput.value,
-      top_up: showTopUp.value ? buildTopUpInput(topUpForm.value) : undefined,
-    },
-    {
-      onSettled: () => {
-        isCreateGroupSubmitting.value = false
-      },
-    }
-  )
-}
 
 function submitCreateNode() {
   const url = nodeURLInput.value.trim()
@@ -356,10 +299,13 @@ onBeforeUnmount(() => {
           <div v-else class="flex flex-wrap items-center gap-2">
             <CreateNodesMenu
               :groups="groups"
-              @create-group="showCreateGroupDialog = true"
+              @create-group="showGroupsPanel = true"
               @create-node="showCreateNodeDialog = true"
             />
-            <GroupsTopUpStatusDialog :groups="groups" />
+            <UiButton variant="outline" @click="showGroupsPanel = true">
+              <FolderClosed class="mr-2 h-4 w-4" />
+              Groups
+            </UiButton>
             <ImportNodesMenu @imported="handleImportFinished" />
           </div>
           <UiInput
@@ -386,7 +332,6 @@ onBeforeUnmount(() => {
         <NodeTable
           v-else
           :nodes="filteredFlatNodes"
-          :inbounds="inbounds ?? []"
           :group-name-by-i-d="groupNameByID"
           :selected-node-i-ds="selectedNodeIDs"
           :deleting-node-i-ds="deletingNodeIDs"
@@ -400,87 +345,15 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <Sheet v-model:open="showCreateGroupDialog">
+      <Sheet v-model:open="showGroupsPanel">
         <SheetContent>
           <SheetHeader>
-            <SheetTitle>Create Group</SheetTitle>
-            <SheetDescription>Create a new group for organizing nodes.</SheetDescription>
+            <SheetTitle>Groups</SheetTitle>
+            <SheetDescription>Manage your node groups</SheetDescription>
           </SheetHeader>
-          <div class="grow min-h-0 space-y-4 overflow-y-auto py-4">
-            <div class="space-y-2">
-              <label
-                class="inline-flex items-center gap-2 text-sm font-medium"
-                for="create-group-name"
-              >
-                <Pencil class="h-4 w-4" />
-                Name
-              </label>
-              <UiInput
-                id="create-group-name"
-                v-model="groupNameInput"
-                name="create-group-name"
-                placeholder="Group name"
-                @keyup.enter="submitCreateGroup"
-              />
-            </div>
-            <div class="flex items-center gap-2">
-              <input
-                id="create-group-random-enabled"
-                v-model="groupRandomEnabledInput"
-                type="checkbox"
-                class="h-4 w-4 rounded border-input"
-              />
-              <label for="create-group-random-enabled" class="text-sm"
-                >Random selection for subscriptions</label
-              >
-            </div>
-            <div class="space-y-2">
-              <label
-                class="inline-flex items-center gap-2 text-sm font-medium"
-                for="create-group-random-limit"
-                ><Hash class="h-4 w-4" /> Limit (optional)</label
-              >
-              <UiInput
-                id="create-group-random-limit"
-                v-model="groupRandomLimitInput"
-                type="number"
-                min="1"
-                placeholder="Max nodes to return"
-              />
-              <p class="text-xs text-muted-foreground">
-                Maximum number of nodes to return in subscriptions
-              </p>
-            </div>
-            <div class="flex items-center gap-2">
-              <input
-                id="node-create-show-origins"
-                v-model="groupShowOriginsInput"
-                type="checkbox"
-                class="h-4 w-4 rounded border-input"
-              />
-              <label for="node-create-show-origins" class="text-sm">Show direct node links</label>
-            </div>
-            <div class="flex items-center gap-2">
-              <input
-                id="node-create-top-up"
-                v-model="showTopUp"
-                type="checkbox"
-                class="h-4 w-4 rounded border-input"
-              />
-              <label for="node-create-top-up" class="text-sm">Self-refilling (top-up) group</label>
-            </div>
-
-            <TopUpFields v-if="showTopUp" v-model="topUpForm" />
+          <div class="grow min-h-0 overflow-hidden py-4">
+            <GroupsPanel />
           </div>
-          <SheetFooter>
-            <UiButton variant="outline" @click="showCreateGroupDialog = false">Cancel</UiButton>
-            <UiButton
-              :disabled="!groupNameInput.trim() || isCreateGroupSubmitting"
-              @click="submitCreateGroup"
-            >
-              {{ isCreateGroupSubmitting ? 'Creating...' : 'Create' }}
-            </UiButton>
-          </SheetFooter>
         </SheetContent>
       </Sheet>
 

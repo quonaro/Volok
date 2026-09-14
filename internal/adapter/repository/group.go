@@ -14,10 +14,10 @@ import (
 type groupModel struct {
 	ID            string    `gorm:"column:id;primaryKey"`
 	Name          string    `gorm:"column:name"`
+	InboundID     string    `gorm:"column:inbound_id"`
 	TotalNodes    int64     `gorm:"column:total_nodes"`
 	RandomEnabled bool      `gorm:"column:random_enabled"`
 	RandomLimit   *int64    `gorm:"column:random_limit"`
-	IsTopUp       bool      `gorm:"column:is_topup"`
 	ShowOrigins   bool      `gorm:"column:show_origins"`
 	CreatedAt     time.Time `gorm:"column:created_at"`
 }
@@ -39,9 +39,9 @@ func (r *GroupRepository) Create(ctx context.Context, group domain.Group) error 
 	model := groupModel{
 		ID:            group.ID,
 		Name:          group.Name,
+		InboundID:     group.InboundID,
 		RandomEnabled: group.RandomEnabled,
 		RandomLimit:   nullableGroupInt(group.RandomLimit),
-		IsTopUp:       group.IsTopUp,
 		ShowOrigins:   group.ShowOrigins,
 		CreatedAt:     group.CreatedAt,
 	}
@@ -70,9 +70,9 @@ func (r *GroupRepository) FindByID(ctx context.Context, id string) (domain.Group
 	return domain.Group{
 		ID:            model.ID,
 		Name:          model.Name,
+		InboundID:     model.InboundID,
 		RandomEnabled: model.RandomEnabled,
 		RandomLimit:   derefGroupInt(model.RandomLimit),
-		IsTopUp:       model.IsTopUp,
 		ShowOrigins:   model.ShowOrigins,
 		CreatedAt:     model.CreatedAt,
 	}, nil
@@ -83,8 +83,8 @@ func (r *GroupRepository) List(ctx context.Context) ([]domain.Group, error) {
 	err := r.db.WithContext(ctx).
 		Model(&groupModel{}).
 		Select(
-			"groups.id", "groups.name", "groups.random_enabled",
-			"groups.random_limit", "groups.is_topup", "groups.show_origins", "groups.created_at",
+			"groups.id", "groups.name", "groups.inbound_id", "groups.random_enabled",
+			"groups.random_limit", "groups.show_origins", "groups.created_at",
 			"COUNT(node_groups.node_id) AS total_nodes",
 		).
 		Joins("LEFT JOIN node_groups ON node_groups.group_id = groups.id").
@@ -99,10 +99,10 @@ func (r *GroupRepository) List(ctx context.Context) ([]domain.Group, error) {
 		groups = append(groups, domain.Group{
 			ID:            model.ID,
 			Name:          model.Name,
+			InboundID:     model.InboundID,
 			TotalNodes:    int(model.TotalNodes),
 			RandomEnabled: model.RandomEnabled,
 			RandomLimit:   derefGroupInt(model.RandomLimit),
-			IsTopUp:       model.IsTopUp,
 			ShowOrigins:   model.ShowOrigins,
 			CreatedAt:     model.CreatedAt,
 		})
@@ -121,9 +121,9 @@ func (r *GroupRepository) Update(ctx context.Context, group domain.Group) error 
 
 	updates := map[string]any{
 		"name":           group.Name,
+		"inbound_id":     group.InboundID,
 		"random_enabled": group.RandomEnabled,
 		"random_limit":   nullableGroupInt(group.RandomLimit),
-		"is_topup":       group.IsTopUp,
 		"show_origins":   group.ShowOrigins,
 	}
 	if !group.RandomEnabled && group.RandomLimit != nil {

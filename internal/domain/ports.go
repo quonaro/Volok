@@ -36,7 +36,7 @@ type NodeRepository interface {
 type TokenRepository interface {
 	IssueToken(
 		ctx context.Context, owner string, groupIDs []string,
-		inboundIDs []string, expiresAt time.Time,
+		expiresAt time.Time,
 		quotaBytes *int64, quotaPeriod string,
 	) (Token, string, error)
 	ValidateToken(ctx context.Context, token string, at time.Time) (bool, error)
@@ -50,7 +50,7 @@ type TokenRepository interface {
 	Remove(ctx context.Context, id string) error
 	Update(
 		ctx context.Context, id string, owner string,
-		groupIDs []string, inboundIDs []string,
+		groupIDs []string,
 		expiresAt time.Time, quotaBytes *int64, quotaPeriod string,
 	) error
 	SetQuota(ctx context.Context, id string, quotaBytes *int64, quotaPeriod string) error
@@ -84,32 +84,12 @@ type GroupRepository interface {
 	Delete(ctx context.Context, id string) error
 }
 
-// GroupTopUpRepository provides persistence operations for group top-up settings.
-type GroupTopUpRepository interface {
-	Create(ctx context.Context, topUp GroupTopUp) error
-	FindByID(ctx context.Context, id string) (GroupTopUp, error)
-	FindByGroupID(ctx context.Context, groupID string) (GroupTopUp, error)
-	List(ctx context.Context) ([]GroupTopUp, error)
-	ListDue(ctx context.Context, at time.Time) ([]GroupTopUp, error)
-	Update(ctx context.Context, topUp GroupTopUp) error
-	Delete(ctx context.Context, id string) error
-}
-
 // PublicSourceRepository provides persistence operations for public VLESS sources.
 type PublicSourceRepository interface {
 	Create(ctx context.Context, source PublicSource) error
 	FindByID(ctx context.Context, id string) (PublicSource, error)
 	List(ctx context.Context) ([]PublicSource, error)
 	Update(ctx context.Context, source PublicSource) error
-	Delete(ctx context.Context, id string) error
-}
-
-// InboundRepository provides persistence operations for VLESS REALITY inbounds.
-type InboundRepository interface {
-	Create(ctx context.Context, inbound Inbound) error
-	FindByID(ctx context.Context, id string) (Inbound, error)
-	List(ctx context.Context) ([]Inbound, error)
-	Update(ctx context.Context, inbound Inbound) error
 	Delete(ctx context.Context, id string) error
 }
 

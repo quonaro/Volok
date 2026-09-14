@@ -26,7 +26,7 @@ type RuntimeController struct {
 	logger          *slog.Logger
 	tokenRepo       domain.TokenRepository
 	nodeRepo        domain.NodeRepository
-	inboundRepo     domain.InboundRepository
+	inbounds        []domain.Inbound
 	singboxLogLevel string
 	debounce        time.Duration
 	logOutput       func(string)
@@ -45,7 +45,7 @@ func NewRuntimeController(
 	logger *slog.Logger,
 	tokenRepo domain.TokenRepository,
 	nodeRepo domain.NodeRepository,
-	inboundRepo domain.InboundRepository,
+	inbounds []domain.Inbound,
 	singboxLogLevel string,
 	debounce time.Duration,
 	logOutput func(string),
@@ -57,7 +57,7 @@ func NewRuntimeController(
 		logger:          logger,
 		tokenRepo:       tokenRepo,
 		nodeRepo:        nodeRepo,
-		inboundRepo:     inboundRepo,
+		inbounds:        inbounds,
 		singboxLogLevel: singboxLogLevel,
 		debounce:        debounce,
 		logOutput:       logOutput,
@@ -249,15 +249,13 @@ func (r *RuntimeController) loadRuntimeData(ctx context.Context) (
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("listing nodes: %w", err)
 	}
-	inbounds, err = r.inboundRepo.List(ctx)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("listing inbounds: %w", err)
-	}
+	inbounds = r.inbounds
 	return tokens, nodes, inbounds, nil
 }
 
 func toHubInboundConfig(inbound domain.Inbound) HubInboundConfig {
 	return HubInboundConfig{
+		Type:       inbound.Type,
 		Listen:     inbound.Address,
 		Port:       inbound.Port,
 		SNI:        inbound.SNI,
@@ -326,19 +324,21 @@ func isBindError(err error) bool {
 	return strings.Contains(msg, "bind:") && (strings.Contains(msg, "permission denied") || strings.Contains(msg, "address already in use"))
 }
 
-// failedInboundTag extracts the vless-in-N tag from a sing-box start error.
+// failedInboundTag extracts the inbound tag (vless-in-N or mixed-in-N) from a sing-box start error.
 func failedInboundTag(errMsg string) string {
-	const prefix = "initialize inbound/vless["
-	idx := strings.Index(errMsg, prefix)
-	if idx == -1 {
-		return ""
+	for _, prefix := range []string{"initialize inbound/vless[", "initialize inbound/mixed["} {
+		idx := strings.Index(errMsg, prefix)
+		if idx == -1 {
+			continue
+		}
+		rest := errMsg[idx+len(prefix):]
+		end := strings.Index(rest, "]")
+		if end == -1 {
+			return ""
+		}
+		return rest[:end]
 	}
-	rest := errMsg[idx+len(prefix):]
-	end := strings.Index(rest, "]")
-	if end == -1 {
-		return ""
-	}
-	return rest[:end]
+	return ""
 }
 
 // inboundIndexFromTag parses the numeric suffix of a vless-in-N tag.

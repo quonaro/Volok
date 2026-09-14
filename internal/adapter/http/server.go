@@ -39,7 +39,6 @@ type Handlers struct {
 	Token               *TokenManagementHandler
 	Node                *NodeManagementHandler
 	Group               *GroupManagementHandler
-	GroupTopUp          *GroupTopUpManagementHandler
 	PublicSource        *PublicSourceManagementHandler
 	Inbound             *InboundManagementHandler
 	Settings            *SettingsHandler
@@ -52,7 +51,6 @@ type Handlers struct {
 	StreamSystemMetrics http.Handler
 	ImportExport        *ImportExportHandler
 	LogStream           http.Handler
-	TopUpStream         http.Handler
 }
 
 func registerHandlers(apiMux *http.ServeMux, humaAPI huma.API, handlers Handlers) {
@@ -61,9 +59,6 @@ func registerHandlers(apiMux *http.ServeMux, humaAPI huma.API, handlers Handlers
 	handlers.Token.Register(humaAPI)
 	handlers.Node.Register(humaAPI)
 	handlers.Group.Register(humaAPI)
-	if handlers.GroupTopUp != nil {
-		handlers.GroupTopUp.Register(humaAPI)
-	}
 	handlers.PublicSource.Register(humaAPI)
 	handlers.Inbound.Register(humaAPI)
 	handlers.Settings.Register(humaAPI)
@@ -88,9 +83,6 @@ func registerHandlers(apiMux *http.ServeMux, humaAPI huma.API, handlers Handlers
 	}
 	if handlers.LogStream != nil {
 		apiMux.HandleFunc("GET /v1/events/logs", handlers.LogStream.ServeHTTP)
-	}
-	if handlers.TopUpStream != nil {
-		apiMux.HandleFunc("GET /v1/group-top-ups/stream", handlers.TopUpStream.ServeHTTP)
 	}
 }
 

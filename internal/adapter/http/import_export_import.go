@@ -22,9 +22,9 @@ func (h *ImportExportHandler) importGroups(ctx context.Context, groups []exportG
 		if err := h.groupRepo.Create(ctx, domain.Group{
 			ID:            g.ID,
 			Name:          g.Name,
+			InboundID:     g.InboundID,
 			RandomEnabled: g.RandomEnabled,
 			RandomLimit:   g.RandomLimit,
-			IsTopUp:       g.IsTopUp,
 			CreatedAt:     time.Now().UTC(),
 		}); err != nil {
 			h.logger.Warn("import group skipped", slog.String("id", g.ID), slog.String("error", err.Error()))
@@ -33,8 +33,6 @@ func (h *ImportExportHandler) importGroups(ctx context.Context, groups []exportG
 }
 
 func (h *ImportExportHandler) importNodes(ctx context.Context, nodes []exportNode) {
-	topUpGroupIDs := h.topUpGroupIDs(ctx)
-
 	for _, n := range nodes {
 		if n.ID == "" || n.URL == "" {
 			h.logger.Warn("import node skipped: missing id or url")
@@ -46,10 +44,6 @@ func (h *ImportExportHandler) importNodes(ctx context.Context, nodes []exportNod
 		}
 		if len(n.GroupIDs) > 100 {
 			h.logger.Warn("import node skipped: too many group_ids", slog.String("id", n.ID))
-			continue
-		}
-		if hasTopUpGroup(n.GroupIDs, topUpGroupIDs) {
-			h.logger.Warn("import node skipped: targets a top-up group", slog.String("id", n.ID))
 			continue
 		}
 
@@ -91,101 +85,6 @@ func (h *ImportExportHandler) importNodes(ctx context.Context, nodes []exportNod
 	}
 }
 
-func (h *ImportExportHandler) importTopUps(ctx context.Context, topUps []exportTopUp) {
-	for _, t := range topUps {
-		if t.GroupID == "" {
-			h.logger.Warn("import top-up skipped: missing group_id")
-			continue
-		}
-		if len(t.URLs) > 100 {
-			h.logger.Warn("import top-up skipped: too many urls", slog.String("group_id", t.GroupID))
-			continue
-		}
-		for _, u := range t.URLs {
-			if len(u) > 4096 {
-				h.logger.Warn("import top-up skipped: url too long", slog.String("group_id", t.GroupID))
-				continue
-			}
-		}
-		id, err := domain.GenerateGroupTopUpID()
-		if err != nil {
-			h.logger.Warn("import top-up skipped", slog.String("group_id", t.GroupID), slog.String("error", err.Error()))
-			continue
-		}
-
-		cfg, err := toTopUpCheckConfig(t.CheckConfig)
-		if err != nil {
-			h.logger.Warn("import top-up skipped", slog.String("group_id", t.GroupID), slog.String("error", err.Error()))
-			continue
-		}
-
-		nextRun := time.Now().UTC()
-		if t.NextRunAt != "" {
-			if p, err := time.Parse(time.RFC3339, t.NextRunAt); err == nil {
-				nextRun = p.UTC()
-			}
-		}
-
-		var lastRun *time.Time
-		if t.LastRunAt != "" {
-			if p, err := time.Parse(time.RFC3339, t.LastRunAt); err == nil {
-				lr := p.UTC()
-				lastRun = &lr
-			}
-		}
-
-		topUp := domain.GroupTopUp{
-			ID:           id,
-			GroupID:      t.GroupID,
-			URLs:         t.URLs,
-			ParserType:   t.ParserType,
-			ParserParams: t.ParserParams,
-			CheckEnabled: t.CheckEnabled,
-			CheckConfig:  cfg,
-			ScheduleType: t.ScheduleType,
-			ScheduleExpr: t.ScheduleExpr,
-			NextRunAt:    nextRun,
-			LastRunAt:    lastRun,
-			Enabled:      t.Enabled,
-			CreatedAt:    time.Now().UTC(),
-			UpdatedAt:    time.Now().UTC(),
-		}
-		if err := h.topUpRepo.Create(ctx, topUp); err != nil {
-			h.logger.Warn("import top-up skipped", slog.String("group_id", t.GroupID), slog.String("error", err.Error()))
-		}
-	}
-}
-
-func (h *ImportExportHandler) importInbounds(ctx context.Context, inbounds []exportInbound) {
-	for _, i := range inbounds {
-		if i.ID == "" || i.Name == "" {
-			h.logger.Warn("import inbound skipped: missing id or name")
-			continue
-		}
-		if i.Port < 1 || i.Port > 65535 {
-			h.logger.Warn("import inbound skipped: invalid port", slog.String("id", i.ID))
-			continue
-		}
-		if err := h.inboundRepo.Create(ctx, domain.Inbound{
-			ID:           i.ID,
-			Name:         i.Name,
-			Address:      i.Address,
-			Port:         i.Port,
-			SNI:          i.SNI,
-			Handshake:    i.Handshake,
-			PublicKey:    i.PublicKey,
-			PrivateKey:   i.PrivateKey,
-			ShortID:      i.ShortID,
-			Fingerprint:  i.Fingerprint,
-			NameTemplate: i.NameTemplate,
-			CreatedAt:    time.Now().UTC(),
-			UpdatedAt:    time.Now().UTC(),
-		}); err != nil {
-			h.logger.Warn("import inbound skipped", slog.String("id", i.ID), slog.String("error", err.Error()))
-		}
-	}
-}
-
 func (h *ImportExportHandler) importPublicSources(ctx context.Context, sources []exportPublicSource) {
 	for _, ps := range sources {
 		if ps.ID == "" || ps.URL == "" {
@@ -222,33 +121,9 @@ func (h *ImportExportHandler) importTokens(ctx context.Context, tokens []exportT
 			expiresAt = time.Now().UTC().Add(30 * 24 * time.Hour)
 		}
 		if _, _, err := h.tokenRepo.IssueToken(
-			ctx, t.Owner, t.GroupIDs, t.InboundIDs, expiresAt, t.QuotaBytes, t.QuotaPeriod,
+			ctx, t.Owner, t.GroupIDs, expiresAt, t.QuotaBytes, t.QuotaPeriod,
 		); err != nil {
 			h.logger.Warn("import token skipped", slog.String("owner", t.Owner), slog.String("error", err.Error()))
 		}
 	}
-}
-
-func (h *ImportExportHandler) topUpGroupIDs(ctx context.Context) map[string]struct{} {
-	groups, err := h.groupRepo.List(ctx)
-	if err != nil {
-		h.logger.Error("failed to list groups for import guard", slog.String("error", err.Error()))
-		return nil
-	}
-	ids := make(map[string]struct{})
-	for _, g := range groups {
-		if g.IsTopUp {
-			ids[g.ID] = struct{}{}
-		}
-	}
-	return ids
-}
-
-func hasTopUpGroup(groupIDs []string, topUpGroupIDs map[string]struct{}) bool {
-	for _, id := range groupIDs {
-		if _, ok := topUpGroupIDs[id]; ok {
-			return true
-		}
-	}
-	return false
 }

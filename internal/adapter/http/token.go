@@ -24,29 +24,26 @@ type RuntimeController interface {
 }
 
 type TokenManagementHandler struct {
-	tokenRepo   domain.TokenRepository
-	groupRepo   domain.GroupRepository
-	nodeRepo    domain.NodeRepository
-	inboundRepo domain.InboundRepository
-	runtime     RuntimeController
-	logger      *slog.Logger
+	tokenRepo domain.TokenRepository
+	groupRepo domain.GroupRepository
+	nodeRepo  domain.NodeRepository
+	runtime   RuntimeController
+	logger    *slog.Logger
 }
 
 func NewTokenManagementHandler(
 	tokenRepo domain.TokenRepository,
 	groupRepo domain.GroupRepository,
 	nodeRepo domain.NodeRepository,
-	inboundRepo domain.InboundRepository,
 	runtime RuntimeController,
 	logger *slog.Logger,
 ) *TokenManagementHandler {
 	return &TokenManagementHandler{
-		tokenRepo:   tokenRepo,
-		groupRepo:   groupRepo,
-		nodeRepo:    nodeRepo,
-		inboundRepo: inboundRepo,
-		runtime:     runtime,
-		logger:      logger,
+		tokenRepo: tokenRepo,
+		groupRepo: groupRepo,
+		nodeRepo:  nodeRepo,
+		runtime:   runtime,
+		logger:    logger,
 	}
 }
 
@@ -54,7 +51,6 @@ type CreateTokenInput struct {
 	Body struct {
 		Owner       string   `json:"owner" required:"true" maxLength:"64"`
 		GroupIDs    []string `json:"group_ids"`
-		InboundIDs  []string `json:"inbound_ids"`
 		ExpiresIn   string   `json:"expires_in" example:"24h"`
 		QuotaBytes  *int64   `json:"quota_bytes,omitempty"`
 		QuotaPeriod string   `json:"quota_period,omitempty" example:"month"`
@@ -69,7 +65,6 @@ type CreateTokenOutput struct {
 		Owner       string    `json:"owner"`
 		GroupID     string    `json:"group_id"`
 		GroupIDs    []string  `json:"group_ids"`
-		InboundIDs  []string  `json:"inbound_ids"`
 		IsActive    bool      `json:"is_active"`
 		QuotaBytes  *int64    `json:"quota_bytes,omitempty"`
 		QuotaPeriod string    `json:"quota_period"`
@@ -91,7 +86,6 @@ type UpdateTokenInput struct {
 	Body struct {
 		Owner       string   `json:"owner" required:"true" maxLength:"64"`
 		GroupIDs    []string `json:"group_ids"`
-		InboundIDs  []string `json:"inbound_ids"`
 		ExpiresIn   string   `json:"expires_in" example:"24h"`
 		QuotaBytes  *int64   `json:"quota_bytes,omitempty"`
 		QuotaPeriod string   `json:"quota_period,omitempty" example:"month"`
@@ -103,7 +97,6 @@ type TokenItem struct {
 	Owner           string    `json:"owner"`
 	GroupID         string    `json:"group_id"`
 	GroupIDs        []string  `json:"group_ids"`
-	InboundIDs      []string  `json:"inbound_ids"`
 	AccessURL       string    `json:"access_url"`
 	IsActive        bool      `json:"is_active"`
 	QuotaBytes      *int64    `json:"quota_bytes,omitempty"`
@@ -136,7 +129,6 @@ func (h *TokenManagementHandler) CreateToken(ctx context.Context, input *CreateT
 	}
 
 	groupIDs := uniqueStringSlice(input.Body.GroupIDs)
-	inboundIDs := uniqueStringSlice(input.Body.InboundIDs)
 
 	for _, groupID := range groupIDs {
 		if _, err := h.groupRepo.FindByID(ctx, groupID); err != nil {
@@ -146,17 +138,6 @@ func (h *TokenManagementHandler) CreateToken(ctx context.Context, input *CreateT
 			}
 			h.logger.Error("failed to find group", slog.String("group_id", groupID), slog.String("error", err.Error()))
 			return nil, huma.Error500InternalServerError("failed to validate group")
-		}
-	}
-
-	for _, inboundID := range inboundIDs {
-		if _, err := h.inboundRepo.FindByID(ctx, inboundID); err != nil {
-			if errors.Is(err, domain.ErrInboundNotFound) {
-				h.logger.Warn("inbound not found", slog.String("inbound_id", inboundID))
-				return nil, huma.Error400BadRequest("inbound not found")
-			}
-			h.logger.Error("failed to find inbound", slog.String("inbound_id", inboundID), slog.String("error", err.Error()))
-			return nil, huma.Error500InternalServerError("failed to validate inbound")
 		}
 	}
 
@@ -171,7 +152,7 @@ func (h *TokenManagementHandler) CreateToken(ctx context.Context, input *CreateT
 
 	expiresAt := time.Now().UTC().Add(expiresIn)
 	token, plainToken, err := h.tokenRepo.IssueToken(
-		ctx, input.Body.Owner, groupIDs, inboundIDs, expiresAt,
+		ctx, input.Body.Owner, groupIDs, expiresAt,
 		input.Body.QuotaBytes, input.Body.QuotaPeriod,
 	)
 	if err != nil {
@@ -190,7 +171,6 @@ func (h *TokenManagementHandler) CreateToken(ctx context.Context, input *CreateT
 	out.Body.Owner = token.Owner
 	out.Body.GroupID = token.GroupID
 	out.Body.GroupIDs = token.GroupIDs
-	out.Body.InboundIDs = token.InboundIDs
 	out.Body.IsActive = token.IsActive
 	out.Body.QuotaBytes = token.QuotaBytes
 	out.Body.QuotaPeriod = token.QuotaPeriod
@@ -215,7 +195,6 @@ func (h *TokenManagementHandler) ListTokens(ctx context.Context, _ *struct{}) (*
 			Owner:           t.Owner,
 			GroupID:         t.GroupID,
 			GroupIDs:        t.GroupIDs,
-			InboundIDs:      t.InboundIDs,
 			AccessURL:       t.AccessURL,
 			IsActive:        t.IsActive,
 			QuotaBytes:      t.QuotaBytes,
@@ -335,7 +314,6 @@ func (h *TokenManagementHandler) UpdateToken(ctx context.Context, input *UpdateT
 	}
 
 	groupIDs := uniqueStringSlice(input.Body.GroupIDs)
-	inboundIDs := uniqueStringSlice(input.Body.InboundIDs)
 
 	for _, groupID := range groupIDs {
 		if _, err := h.groupRepo.FindByID(ctx, groupID); err != nil {
@@ -345,17 +323,6 @@ func (h *TokenManagementHandler) UpdateToken(ctx context.Context, input *UpdateT
 			}
 			h.logger.Error("failed to find group", slog.String("group_id", groupID), slog.String("error", err.Error()))
 			return nil, huma.Error500InternalServerError("failed to validate group")
-		}
-	}
-
-	for _, inboundID := range inboundIDs {
-		if _, err := h.inboundRepo.FindByID(ctx, inboundID); err != nil {
-			if errors.Is(err, domain.ErrInboundNotFound) {
-				h.logger.Warn("inbound not found", slog.String("inbound_id", inboundID))
-				return nil, huma.Error400BadRequest("inbound not found")
-			}
-			h.logger.Error("failed to find inbound", slog.String("inbound_id", inboundID), slog.String("error", err.Error()))
-			return nil, huma.Error500InternalServerError("failed to validate inbound")
 		}
 	}
 
@@ -370,7 +337,7 @@ func (h *TokenManagementHandler) UpdateToken(ctx context.Context, input *UpdateT
 
 	expiresAt := time.Now().UTC().Add(expiresIn)
 	if err := h.tokenRepo.Update(
-		ctx, input.ID, input.Body.Owner, groupIDs, inboundIDs, expiresAt,
+		ctx, input.ID, input.Body.Owner, groupIDs, expiresAt,
 		input.Body.QuotaBytes, input.Body.QuotaPeriod,
 	); err != nil {
 		h.logger.Error("failed to update token", slog.String("id", input.ID), slog.String("error", err.Error()))

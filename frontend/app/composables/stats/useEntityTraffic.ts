@@ -9,7 +9,6 @@ import { toast } from 'vue-sonner'
 import {
   fetchTokenTrafficStats,
   fetchNodeTrafficStats,
-  fetchInboundTrafficStats,
   fetchDomainTrafficStats,
   fetchDomainHistory,
   clearDomainHistory,
@@ -31,15 +30,6 @@ export function useNodeTrafficStats(options?: TrafficQueryOptions<EntityTrafficO
   return useQuery({
     queryKey: ['node-traffic-stats'],
     queryFn: () => fetchNodeTrafficStats(),
-    refetchInterval: 30_000,
-    ...options,
-  })
-}
-
-export function useInboundTrafficStats(options?: TrafficQueryOptions<EntityTrafficOutput>) {
-  return useQuery({
-    queryKey: ['inbound-traffic-stats'],
-    queryFn: () => fetchInboundTrafficStats(),
     refetchInterval: 30_000,
     ...options,
   })

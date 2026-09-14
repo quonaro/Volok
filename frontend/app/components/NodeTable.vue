@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Node } from '~/utils/schemas/node'
-import type { Inbound } from '~/utils/schemas/inbound'
 import { parseVlessUrl } from '~/utils/vless'
 import { countryFlagEmoji } from '~/utils/country'
 import UiButton from '~/components/ui/button/button.vue'
@@ -16,7 +15,6 @@ import { MoreHorizontal, Trash2, Clock, Monitor, Pencil, Copy } from 'lucide-vue
 
 const props = defineProps<{
   nodes: Node[]
-  inbounds?: Inbound[]
   groupNameByID: Record<string, string>
   selectedNodeIDs?: Set<string>
   deletingNodeIDs?: Set<string>
@@ -43,11 +41,6 @@ interface Row {
   expired: boolean
   expiringSoon: boolean
 }
-
-const selfInbound = computed<Inbound | null>(() => {
-  if (!props.inbounds || props.inbounds.length === 0) return null
-  return props.inbounds[0] ?? null
-})
 
 function formatExpiresAt(iso: string): string {
   const d = new Date(iso)
@@ -79,14 +72,13 @@ function buildRow(node: Node): Row {
   const groups = node.group_ids.map((id) => props.groupNameByID[id] ?? id).join(', ')
 
   if (node.is_self) {
-    const ib = selfInbound.value
     return {
       node,
       title: 'Current Machine',
-      host: ib?.address || '—',
+      host: '—',
       flag: flagEmoji(node),
       country: countryLabel(node),
-      port: ib ? String(ib.port || 443) : '—',
+      port: '—',
       security: 'reality',
       network: 'tcp',
       uuid: '—',

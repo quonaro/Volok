@@ -8,14 +8,15 @@ import (
 
 	"outless/internal/domain"
 	"outless/internal/utils"
-	"outless/shared/vless"
 
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/option"
+	"github.com/sagernet/sing/common/auth"
 )
 
-// HubInboundConfig holds REALITY inbound parameters for the generated sing-box config.
+// HubInboundConfig holds inbound parameters for the generated sing-box config.
 type HubInboundConfig struct {
+	Type       string
 	Listen     string
 	Port       int
 	SNI        string
@@ -25,9 +26,10 @@ type HubInboundConfig struct {
 }
 
 const (
-	tagInbound = "vless-in"
-	tagBlock   = "block"
-	flowVision = "xtls-rprx-vision"
+	tagVLESSInbound = "vless-in"
+	tagMixedInbound = "mixed-in"
+	tagBlock        = "block"
+	flowVision      = "xtls-rprx-vision"
 )
 
 // userName builds a deterministic sing-box inbound user name for a token+node pair.
@@ -65,10 +67,12 @@ func GenerateOptions(
 	singboxLogLevel string,
 	logger *slog.Logger,
 ) (option.Options, error) {
-	users, rules, err := buildUsersAndRules(tokens, nodes, logger)
+	vlessUsers, rules, err := buildUsersAndRules(tokens, nodes, logger)
 	if err != nil {
 		return option.Options{}, err
 	}
+
+	mixedUsers := buildMixedAuthUsers(tokens, nodes)
 
 	outbounds, err := buildOutbounds(nodes, logger)
 	if err != nil {
@@ -78,7 +82,7 @@ func GenerateOptions(
 		option.Outbound{Type: C.TypeBlock, Tag: tagBlock},
 	)
 
-	inboundOptions, err := buildInbounds(inbounds, users, logger)
+	inboundOptions, err := buildInbounds(inbounds, vlessUsers, mixedUsers, logger)
 	if err != nil {
 		return option.Options{}, err
 	}
@@ -109,7 +113,8 @@ func GenerateOptions(
 			slog.Int("tokens", len(tokens)),
 			slog.Int("nodes", len(nodes)),
 			slog.Int("inbounds", len(inboundOptions)),
-			slog.Int("users", len(users)),
+			slog.Int("vless_users", len(vlessUsers)),
+			slog.Int("mixed_users", len(mixedUsers)),
 			slog.Int("outbounds", len(outbounds)),
 			slog.Int("rules", len(rules)),
 		)
@@ -118,70 +123,97 @@ func GenerateOptions(
 	return opts, nil
 }
 
-func buildInbounds(inbounds []HubInboundConfig, users []option.VLESSUser, logger *slog.Logger) ([]option.Inbound, error) {
+func buildInbounds(
+	inbounds []HubInboundConfig,
+	vlessUsers []option.VLESSUser,
+	mixedUsers []auth.User,
+	logger *slog.Logger,
+) ([]option.Inbound, error) {
 	result := make([]option.Inbound, 0, len(inbounds))
 	for i, inbound := range inbounds {
-		listen := inbound.Listen
-		if listen == "" {
-			listen = "0.0.0.0"
+		if inbound.Type == domain.InboundTypeMixed {
+			ib, err := buildMixedInbound(i, inbound, mixedUsers)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, ib)
+			continue
 		}
-		listenAddr, err := netip.ParseAddr(listen)
+
+		ib, err := buildVLESSInbound(i, inbound, vlessUsers)
 		if err != nil {
-			return nil, fmt.Errorf("parsing listen address %q: %w", listen, err)
+			return nil, err
 		}
-
-		port := inbound.Port
-		if port == 0 {
-			port = 443
-		}
-
-		handshake := inbound.Handshake
-		if handshake == "" {
-			handshake = inbound.SNI
-		}
-		if handshake == "" {
-			handshake = "www.google.com"
-		}
-
-		sni := inbound.SNI
-		if sni == "" {
-			sni = handshake
-		}
-
-		shortID := inbound.ShortID
-		if shortID == "" {
-			shortID = "0000000000000000"
-		}
-		shortIDs := option.Listable[string]{shortID}
-
-		reality := &option.InboundRealityOptions{
-			Enabled:    true,
-			PrivateKey: inbound.PrivateKey,
-			ShortID:    shortIDs,
-			Handshake: option.InboundRealityHandshakeOptions{
-				ServerOptions: option.ServerOptions{Server: handshake, ServerPort: 443},
-			},
-		}
-
-		vlessInbound := option.VLESSInboundOptions{
-			ListenOptions: option.ListenOptions{
-				Listen:     option.NewListenAddress(listenAddr),
-				ListenPort: uint16(port),
-			},
-			Users: users,
-			InboundTLSOptionsContainer: option.InboundTLSOptionsContainer{
-				TLS: &option.InboundTLSOptions{
-					Enabled:    true,
-					ServerName: sni,
-					Reality:    reality,
-				},
-			},
-		}
-
-		tag := fmt.Sprintf("%s-%d", tagInbound, i)
-		result = append(result, option.Inbound{Type: C.TypeVLESS, Tag: tag, VLESSOptions: vlessInbound})
+		result = append(result, ib)
 	}
 	return result, nil
+}
+
+// buildVLESSInbound creates a sing-box VLESS REALITY inbound.
+func buildVLESSInbound(
+	index int,
+	inbound HubInboundConfig,
+	users []option.VLESSUser,
+) (option.Inbound, error) {
+	listen := inbound.Listen
+	if listen == "" {
+		listen = "0.0.0.0"
+	}
+	listenAddr, err := netip.ParseAddr(listen)
+	if err != nil {
+		return option.Inbound{}, fmt.Errorf("parsing listen address %q: %w", listen, err)
+	}
+
+	port := inbound.Port
+	if port == 0 {
+		port = 443
+	}
+
+	handshake := inbound.Handshake
+	if handshake == "" {
+		handshake = inbound.SNI
+	}
+	if handshake == "" {
+		handshake = "www.google.com"
+	}
+
+	sni := inbound.SNI
+	if sni == "" {
+		sni = handshake
+	}
+
+	shortID := inbound.ShortID
+	if shortID == "" {
+		shortID = "0000000000000000"
+	}
+	shortIDs := option.Listable[string]{shortID}
+
+	reality := &option.InboundRealityOptions{
+		Enabled:    true,
+		PrivateKey: inbound.PrivateKey,
+		ShortID:    shortIDs,
+		Handshake: option.InboundRealityHandshakeOptions{
+			ServerOptions: option.ServerOptions{Server: handshake, ServerPort: 443},
+		},
+	}
+
+	vlessInbound := option.VLESSInboundOptions{
+		ListenOptions: option.ListenOptions{
+			Listen:     option.NewListenAddress(listenAddr),
+			ListenPort: uint16(port),
+		},
+		Users: users,
+		InboundTLSOptionsContainer: option.InboundTLSOptionsContainer{
+			TLS: &option.InboundTLSOptions{
+				Enabled:    true,
+				ServerName: sni,
+				Reality:    reality,
+			},
+		},
+	}
+
+	tag := fmt.Sprintf("%s-%d", tagVLESSInbound, index)
+	return option.Inbound{Type: C.TypeVLESS, Tag: tag, VLESSOptions: vlessInbound}, nil
 }
 
 // buildUsersAndRules creates one inbound user per accessible token+node pair and
@@ -242,99 +274,5 @@ func routeUserTo(authUser, outbound string) option.Rule {
 			AuthUser: option.Listable[string]{authUser},
 			Outbound: outbound,
 		},
-	}
-}
-
-// buildOutbounds creates one outbound per exit node.
-// Self-nodes use a direct outbound; others use VLESS.
-func buildOutbounds(nodes []domain.Node, logger *slog.Logger) ([]option.Outbound, error) {
-	outbounds := make([]option.Outbound, 0, len(nodes))
-
-	for _, node := range nodes {
-		if node.IsSelf {
-			outbounds = append(outbounds, option.Outbound{
-				Type: C.TypeDirect,
-				Tag:  outboundTag(node.ID),
-			})
-			continue
-		}
-
-		parsed, err := vless.ParseURL(node.URL)
-		if err != nil {
-			if logger != nil {
-				logger.Error("failed to parse VLESS URL", slog.String("node", node.ID), slog.String("error", err.Error()))
-			}
-			continue
-		}
-
-		vlessOut := option.VLESSOutboundOptions{
-			ServerOptions: option.ServerOptions{Server: parsed.Host, ServerPort: uint16(parsed.Port)},
-			UUID:          parsed.UUID,
-			Flow:          parsed.Flow,
-		}
-		if tls := buildOutboundTLS(parsed); tls != nil {
-			vlessOut.TLS = tls
-		}
-		if transport := buildTransport(parsed); transport != nil {
-			vlessOut.Transport = transport
-		}
-
-		outbounds = append(outbounds, option.Outbound{
-			Type:         C.TypeVLESS,
-			Tag:          outboundTag(node.ID),
-			VLESSOptions: vlessOut,
-		})
-	}
-
-	return outbounds, nil
-}
-
-func buildOutboundTLS(p vless.Parsed) *option.OutboundTLSOptions {
-	switch p.Security {
-	case "reality":
-		tls := &option.OutboundTLSOptions{
-			Enabled:    true,
-			ServerName: p.SNI,
-			Reality:    &option.OutboundRealityOptions{Enabled: true, PublicKey: p.PBK, ShortID: p.SID},
-		}
-		fp := p.FP
-		if fp == "" {
-			fp = "chrome"
-		}
-		tls.UTLS = &option.OutboundUTLSOptions{Enabled: true, Fingerprint: fp}
-		return tls
-	case "tls":
-		tls := &option.OutboundTLSOptions{Enabled: true, ServerName: p.SNI}
-		if len(p.ALPN) > 0 {
-			tls.ALPN = p.ALPN
-		}
-		if p.FP != "" {
-			tls.UTLS = &option.OutboundUTLSOptions{Enabled: true, Fingerprint: p.FP}
-		}
-		return tls
-	default:
-		return nil
-	}
-}
-
-func buildTransport(p vless.Parsed) *option.V2RayTransportOptions {
-	switch p.Network {
-	case "ws":
-		path := p.Path
-		if path == "" {
-			path = "/"
-		}
-		ws := option.V2RayWebsocketOptions{Path: path}
-		if p.HostHeader != "" {
-			ws.Headers = option.HTTPHeader{"Host": option.Listable[string]{p.HostHeader}}
-		}
-		return &option.V2RayTransportOptions{Type: C.V2RayTransportTypeWebsocket, WebsocketOptions: ws}
-	case "grpc":
-		return &option.V2RayTransportOptions{
-			Type:        C.V2RayTransportTypeGRPC,
-			GRPCOptions: option.V2RayGRPCOptions{ServiceName: p.Service},
-		}
-	default:
-		return nil
 	}
 }

@@ -16,7 +16,6 @@ import { useResetTrafficToken } from '~/composables/tokens/useResetTrafficToken'
 import { useReissueToken } from '~/composables/tokens/useReissueToken'
 import { useTokenTraffic } from '~/composables/tokens/useTokenTraffic'
 import { useGroups } from '~/composables/groups/useGroups'
-import { useInbounds } from '~/composables/inbounds/useInbounds'
 import { batchDeactivateTokens, batchRemoveTokens } from '~/utils/services/token'
 import {
   Plus,
@@ -30,7 +29,6 @@ import {
   RefreshCw,
   BarChart3,
   Globe,
-  ArrowLeftRight,
   Wifi,
   Activity,
   Calendar,
@@ -66,7 +64,6 @@ const defaultExpiresIn = EXPIRES_IN_OPTIONS[2]?.value ?? '720h'
 
 const { data: tokens, isLoading } = useTokens()
 const { data: groups } = useGroups()
-const { data: inbounds } = useInbounds()
 const { confirm } = useConfirm()
 
 const showCreateDialog = ref(false)
@@ -91,7 +88,6 @@ const selectedTokenIDs = ref<Set<string>>(new Set())
 
 const ownerInput = ref('')
 const groupIdsInput = ref<string[]>([])
-const inboundIdsInput = ref<string[]>([])
 const expiresInInput = ref(defaultExpiresIn)
 const quotaValueInput = ref<number | undefined>(undefined)
 const quotaUnitInput = ref<'MB' | 'GB'>('GB')
@@ -99,7 +95,6 @@ const quotaPeriodInput = ref('')
 
 const editOwnerInput = ref('')
 const editGroupIdsInput = ref<string[]>([])
-const editInboundIdsInput = ref<string[]>([])
 const editExpiresInInput = ref(defaultExpiresIn)
 const editQuotaValueInput = ref<number | undefined>(undefined)
 const editQuotaUnitInput = ref<'MB' | 'GB'>('GB')
@@ -246,14 +241,6 @@ const groupNameById = computed<Record<string, string>>(() => {
   return map
 })
 
-const inboundNameById = computed<Record<string, string>>(() => {
-  const map: Record<string, string> = {}
-  for (const inbound of inbounds.value ?? []) {
-    map[inbound.id] = inbound.name
-  }
-  return map
-})
-
 const sortedTokens = computed<Token[]>(() => {
   const list = tokens.value ?? []
   return [...list].sort((a, b) => b.created_at.localeCompare(a.created_at))
@@ -262,7 +249,6 @@ const sortedTokens = computed<Token[]>(() => {
 function resetForm() {
   ownerInput.value = ''
   groupIdsInput.value = []
-  inboundIdsInput.value = []
   expiresInInput.value = defaultExpiresIn
   quotaValueInput.value = undefined
   quotaUnitInput.value = 'GB'
@@ -303,7 +289,6 @@ function handleCreate() {
   const payload: CreateToken = {
     owner: ownerInput.value.trim(),
     group_ids: groupIdsInput.value,
-    inbound_ids: inboundIdsInput.value,
     expires_in: expiresInInput.value,
     quota_bytes:
       quotaValueInput.value && quotaUnitInput.value
@@ -533,12 +518,6 @@ function tokenGroupLabels(token: Token): string {
   return groupIDs.map((id) => groupNameById.value[id] ?? id).join(', ')
 }
 
-function tokenInboundLabels(token: Token): string {
-  const inboundIDs = token.inbound_ids ?? []
-  if (inboundIDs.length === 0) return 'All inbounds'
-  return inboundIDs.map((id) => inboundNameById.value[id] ?? id).join(', ')
-}
-
 function toggleGroupSelection(groupID: string, checked: boolean) {
   if (checked) {
     groupIdsInput.value = [...groupIdsInput.value.filter((id) => id !== groupID), groupID]
@@ -553,37 +532,6 @@ function handleGroupCheckboxChange(groupID: string, event: Event) {
   toggleGroupSelection(groupID, target.checked)
 }
 
-function toggleInboundSelection(inboundID: string, checked: boolean) {
-  if (checked) {
-    inboundIdsInput.value = [...inboundIdsInput.value.filter((id) => id !== inboundID), inboundID]
-    return
-  }
-  inboundIdsInput.value = inboundIdsInput.value.filter((id) => id !== inboundID)
-}
-
-function handleInboundCheckboxChange(inboundID: string, event: Event) {
-  const target = event.target as HTMLInputElement | null
-  if (!target) return
-  toggleInboundSelection(inboundID, target.checked)
-}
-
-function toggleEditInboundSelection(inboundID: string, checked: boolean) {
-  if (checked) {
-    editInboundIdsInput.value = [
-      ...editInboundIdsInput.value.filter((id) => id !== inboundID),
-      inboundID,
-    ]
-    return
-  }
-  editInboundIdsInput.value = editInboundIdsInput.value.filter((id) => id !== inboundID)
-}
-
-function handleEditInboundCheckboxChange(inboundID: string, event: Event) {
-  const target = event.target as HTMLInputElement | null
-  if (!target) return
-  toggleEditInboundSelection(inboundID, target.checked)
-}
-
 function openEditDialog(token: Token) {
   updateMutation.reset()
   editingTokenId.value = token.id
@@ -593,7 +541,6 @@ function openEditDialog(token: Token) {
     : token.group_id
       ? [token.group_id]
       : []
-  editInboundIdsInput.value = token.inbound_ids ?? []
   editExpiresInInput.value = defaultExpiresIn
   if (token.quota_bytes) {
     const size = bytesToSize(token.quota_bytes)
@@ -614,7 +561,6 @@ function closeEditDialog() {
   editingTokenId.value = ''
   editOwnerInput.value = ''
   editGroupIdsInput.value = []
-  editInboundIdsInput.value = []
   editExpiresInInput.value = defaultExpiresIn
   editQuotaValueInput.value = undefined
   editQuotaUnitInput.value = 'GB'
@@ -633,7 +579,6 @@ function handleEdit() {
   const payload = {
     owner: editOwnerInput.value.trim(),
     group_ids: editGroupIdsInput.value,
-    inbound_ids: editInboundIdsInput.value,
     expires_in: editExpiresInInput.value,
     quota_bytes:
       editQuotaValueInput.value && editQuotaUnitInput.value
@@ -790,11 +735,6 @@ function handleEditGroupCheckboxChange(groupID: string, event: Event) {
             <span class="text-[10px] text-muted-foreground/50 shrink-0">Groups</span>
             <span class="truncate text-muted-foreground">{{ tokenGroupLabels(token) }}</span>
           </div>
-          <div class="flex items-center gap-1.5 min-w-0">
-            <ArrowLeftRight class="h-3.5 w-3.5 shrink-0 opacity-60" />
-            <span class="text-[10px] text-muted-foreground/50 shrink-0">Inbounds</span>
-            <span class="truncate text-muted-foreground">{{ tokenInboundLabels(token) }}</span>
-          </div>
           <div class="col-span-2 flex items-center gap-1.5 min-w-0">
             <Activity class="h-3.5 w-3.5 shrink-0 opacity-60" />
             <span class="text-[10px] text-muted-foreground/50 shrink-0">Traffic</span>
@@ -878,31 +818,6 @@ function handleEditGroupCheckboxChange(groupID: string, event: Event) {
                   @change="handleGroupCheckboxChange(g.id, $event)"
                 />
                 <span>{{ g.name }}</span>
-              </label>
-            </div>
-          </div>
-          <div class="space-y-2">
-            <label class="text-sm font-medium">Inbound Access</label>
-            <div class="max-h-40 space-y-2 overflow-auto rounded-md border p-2">
-              <label class="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  :checked="inboundIdsInput.length === 0"
-                  @change="inboundIdsInput = []"
-                />
-                <span>All inbounds</span>
-              </label>
-              <label
-                v-for="ib in inbounds ?? []"
-                :key="ib.id"
-                class="flex items-center gap-2 text-sm"
-              >
-                <input
-                  type="checkbox"
-                  :checked="inboundIdsInput.includes(ib.id)"
-                  @change="handleInboundCheckboxChange(ib.id, $event)"
-                />
-                <span>{{ ib.name }}</span>
               </label>
             </div>
           </div>
@@ -1014,31 +929,6 @@ function handleEditGroupCheckboxChange(groupID: string, event: Event) {
                   @change="handleEditGroupCheckboxChange(g.id, $event)"
                 />
                 <span>{{ g.name }}</span>
-              </label>
-            </div>
-          </div>
-          <div class="space-y-2">
-            <label class="text-sm font-medium">Inbound Access</label>
-            <div class="max-h-40 space-y-2 overflow-auto rounded-md border p-2">
-              <label class="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  :checked="editInboundIdsInput.length === 0"
-                  @change="editInboundIdsInput = []"
-                />
-                <span>All inbounds</span>
-              </label>
-              <label
-                v-for="ib in inbounds ?? []"
-                :key="ib.id"
-                class="flex items-center gap-2 text-sm"
-              >
-                <input
-                  type="checkbox"
-                  :checked="editInboundIdsInput.includes(ib.id)"
-                  @change="handleEditInboundCheckboxChange(ib.id, $event)"
-                />
-                <span>{{ ib.name }}</span>
               </label>
             </div>
           </div>

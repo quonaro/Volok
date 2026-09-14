@@ -15,7 +15,6 @@ type StatsHandler struct {
 	nodeRepo    domain.NodeRepository
 	tokenRepo   domain.TokenRepository
 	groupRepo   domain.GroupRepository
-	inboundRepo domain.InboundRepository
 	trafficRepo domain.TrafficRepository
 	logger      *slog.Logger
 }
@@ -25,7 +24,6 @@ func NewStatsHandler(
 	nodeRepo domain.NodeRepository,
 	tokenRepo domain.TokenRepository,
 	groupRepo domain.GroupRepository,
-	inboundRepo domain.InboundRepository,
 	trafficRepo domain.TrafficRepository,
 	logger *slog.Logger,
 ) *StatsHandler {
@@ -33,7 +31,6 @@ func NewStatsHandler(
 		nodeRepo:    nodeRepo,
 		tokenRepo:   tokenRepo,
 		groupRepo:   groupRepo,
-		inboundRepo: inboundRepo,
 		trafficRepo: trafficRepo,
 		logger:      logger,
 	}
@@ -55,7 +52,6 @@ func (h *StatsHandler) Register(api huma.API) {
 	huma.Get(api, "/v1/stats/traffic", h.GetTrafficStats)
 	huma.Get(api, "/v1/stats/traffic/tokens", h.GetTokenTrafficStats)
 	huma.Get(api, "/v1/stats/traffic/nodes", h.GetNodeTrafficStats)
-	huma.Get(api, "/v1/stats/traffic/inbounds", h.GetInboundTrafficStats)
 	huma.Get(api, "/v1/stats/traffic/domains", h.GetDomainTrafficStats)
 	huma.Get(api, "/v1/stats/traffic/domains/history", h.GetDomainTrafficHistory)
 	huma.Delete(api, "/v1/stats/traffic/domains/history", h.ClearDomainHistory)
@@ -180,46 +176,6 @@ func (h *StatsHandler) GetNodeTrafficStats(ctx context.Context, _ *struct{}) (*E
 		out.Body.Items = append(out.Body.Items, TrafficEntityItem{
 			ID:            u.NodeID,
 			Name:          nodeName[u.NodeID],
-			UploadBytes:   u.UploadBytes,
-			DownloadBytes: u.DownloadBytes,
-			TotalBytes:    u.UploadBytes + u.DownloadBytes,
-		})
-	}
-	return out, nil
-}
-
-// GetInboundTrafficStats returns per-inbound traffic for the current day.
-func (h *StatsHandler) GetInboundTrafficStats(ctx context.Context, _ *struct{}) (*EntityTrafficOutput, error) {
-	now := time.Now().UTC()
-	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-
-	usageList, err := h.trafficRepo.ListInboundUsage(ctx, "day", dayStart, 1000)
-	if err != nil {
-		h.logger.Error("failed to list inbound usage", slog.String("error", err.Error()))
-		return nil, huma.Error500InternalServerError("failed to fetch inbound traffic")
-	}
-
-	inbounds, err := h.inboundRepo.List(ctx)
-	if err != nil {
-		h.logger.Error("failed to list inbounds", slog.String("error", err.Error()))
-		return nil, huma.Error500InternalServerError("failed to fetch inbounds")
-	}
-
-	inboundName := make(map[string]string, len(inbounds))
-	for _, ib := range inbounds {
-		inboundName[ib.ID] = ib.Name
-	}
-
-	out := &EntityTrafficOutput{}
-	out.Body.Items = make([]TrafficEntityItem, 0, len(usageList))
-	for _, u := range usageList {
-		name := inboundName[u.InboundTag]
-		if name == "" {
-			name = u.InboundTag
-		}
-		out.Body.Items = append(out.Body.Items, TrafficEntityItem{
-			ID:            u.InboundTag,
-			Name:          name,
 			UploadBytes:   u.UploadBytes,
 			DownloadBytes: u.DownloadBytes,
 			TotalBytes:    u.UploadBytes + u.DownloadBytes,

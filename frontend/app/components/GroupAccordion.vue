@@ -50,16 +50,18 @@ const editGroupMutation = useMutation({
   mutationFn: ({
     id,
     name,
+    inbound_id,
     random_enabled,
     random_limit,
     show_origins,
   }: {
     id: string
     name: string
+    inbound_id: string
     random_enabled: boolean
     random_limit?: number | null
     show_origins: boolean
-  }) => updateGroup(id, { name, random_enabled, random_limit, show_origins }),
+  }) => updateGroup(id, { name, inbound_id, random_enabled, random_limit, show_origins }),
   onSuccess: () => queryClient.invalidateQueries({ queryKey: ['groups'] }),
 })
 async function removeNode(node: Node) {
@@ -84,6 +86,7 @@ function handleAddNode(groupId: string) {
 function handleEditGroup(group: {
   id: string
   name: string
+  inbound_id: string
   random_enabled: boolean
   random_limit: number | null
   show_origins: boolean
@@ -98,6 +101,7 @@ function handleEditGroup(group: {
     {
       id: group.id,
       name: group.name,
+      inbound_id: group.inbound_id,
       random_enabled: group.random_enabled,
       random_limit: group.random_limit,
       show_origins: group.show_origins,

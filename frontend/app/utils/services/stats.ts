@@ -33,12 +33,6 @@ export async function fetchNodeTrafficStats(): Promise<EntityTrafficOutput> {
   return EntityTrafficOutputSchema.parse(data)
 }
 
-export async function fetchInboundTrafficStats(): Promise<EntityTrafficOutput> {
-  const { $api } = useNuxtApp()
-  const data = await $api<EntityTrafficOutput>('/v1/stats/traffic/inbounds')
-  return EntityTrafficOutputSchema.parse(data)
-}
-
 export async function fetchDomainTrafficStats(): Promise<EntityTrafficOutput> {
   const { $api } = useNuxtApp()
   const data = await $api<EntityTrafficOutput>('/v1/stats/traffic/domains')

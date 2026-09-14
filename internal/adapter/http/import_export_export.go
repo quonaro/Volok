@@ -47,63 +47,9 @@ func (h *ImportExportHandler) exportGroups(ctx context.Context) ([]exportGroup, 
 		items = append(items, exportGroup{
 			ID:            g.ID,
 			Name:          g.Name,
+			InboundID:     g.InboundID,
 			RandomEnabled: g.RandomEnabled,
 			RandomLimit:   g.RandomLimit,
-			IsTopUp:       g.IsTopUp,
-		})
-	}
-	return items, nil
-}
-
-func (h *ImportExportHandler) exportTopUps(ctx context.Context) ([]exportTopUp, error) {
-	topUps, err := h.topUpRepo.List(ctx)
-	if err != nil {
-		h.logger.Error("failed to list top-ups for export", slog.String("error", err.Error()))
-		return nil, huma.Error500InternalServerError("failed to export top-ups")
-	}
-
-	items := make([]exportTopUp, 0, len(topUps))
-	for _, t := range topUps {
-		item := exportTopUp{
-			GroupID:      t.GroupID,
-			URLs:         t.URLs,
-			ParserType:   t.ParserType,
-			ParserParams: t.ParserParams,
-			CheckEnabled: t.CheckEnabled,
-			CheckConfig:  fromTopUpCheckConfig(t.CheckConfig),
-			ScheduleType: t.ScheduleType,
-			ScheduleExpr: t.ScheduleExpr,
-			NextRunAt:    t.NextRunAt.UTC().Format(time.RFC3339),
-			Enabled:      t.Enabled,
-		}
-		if t.LastRunAt != nil {
-			item.LastRunAt = t.LastRunAt.UTC().Format(time.RFC3339)
-		}
-		items = append(items, item)
-	}
-	return items, nil
-}
-
-func (h *ImportExportHandler) exportInbounds(ctx context.Context) ([]exportInbound, error) {
-	inbounds, err := h.inboundRepo.List(ctx)
-	if err != nil {
-		h.logger.Error("failed to list inbounds for export", slog.String("error", err.Error()))
-		return nil, huma.Error500InternalServerError("failed to export inbounds")
-	}
-	items := make([]exportInbound, 0, len(inbounds))
-	for _, i := range inbounds {
-		items = append(items, exportInbound{
-			ID:           i.ID,
-			Name:         i.Name,
-			Address:      i.Address,
-			Port:         i.Port,
-			SNI:          i.SNI,
-			Handshake:    i.Handshake,
-			PublicKey:    i.PublicKey,
-			PrivateKey:   i.PrivateKey,
-			ShortID:      i.ShortID,
-			Fingerprint:  i.Fingerprint,
-			NameTemplate: i.NameTemplate,
 		})
 	}
 	return items, nil
@@ -137,7 +83,6 @@ func (h *ImportExportHandler) exportTokens(ctx context.Context) ([]exportToken, 
 		items = append(items, exportToken{
 			Owner:       t.Owner,
 			GroupIDs:    t.GroupIDs,
-			InboundIDs:  t.InboundIDs,
 			IsActive:    t.IsActive,
 			QuotaBytes:  t.QuotaBytes,
 			QuotaPeriod: t.QuotaPeriod,

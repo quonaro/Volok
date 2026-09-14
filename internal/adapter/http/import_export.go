@@ -15,9 +15,7 @@ type ImportExportHandler struct {
 	nodeRepo         domain.NodeRepository
 	tokenRepo        domain.TokenRepository
 	groupRepo        domain.GroupRepository
-	topUpRepo        domain.GroupTopUpRepository
 	publicSourceRepo domain.PublicSourceRepository
-	inboundRepo      domain.InboundRepository
 	logger           *slog.Logger
 }
 
@@ -26,18 +24,14 @@ func NewImportExportHandler(
 	nodeRepo domain.NodeRepository,
 	tokenRepo domain.TokenRepository,
 	groupRepo domain.GroupRepository,
-	topUpRepo domain.GroupTopUpRepository,
 	publicSourceRepo domain.PublicSourceRepository,
-	inboundRepo domain.InboundRepository,
 	logger *slog.Logger,
 ) *ImportExportHandler {
 	return &ImportExportHandler{
 		nodeRepo:         nodeRepo,
 		tokenRepo:        tokenRepo,
 		groupRepo:        groupRepo,
-		topUpRepo:        topUpRepo,
 		publicSourceRepo: publicSourceRepo,
-		inboundRepo:      inboundRepo,
 		logger:           logger,
 	}
 }
@@ -59,39 +53,9 @@ type exportNode struct {
 type exportGroup struct {
 	ID            string `json:"id"`
 	Name          string `json:"name"`
+	InboundID     string `json:"inbound_id"`
 	RandomEnabled bool   `json:"random_enabled"`
 	RandomLimit   *int   `json:"random_limit,omitempty"`
-	IsTopUp       bool   `json:"is_topup"`
-}
-
-// exportTopUp is a serializable top-up representation.
-type exportTopUp struct {
-	GroupID      string          `json:"group_id"`
-	URLs         []string        `json:"urls"`
-	ParserType   string          `json:"parser_type"`
-	ParserParams map[string]any  `json:"parser_params,omitempty"`
-	CheckEnabled bool            `json:"check_enabled"`
-	CheckConfig  TopUpCheckInput `json:"check_config,omitempty"`
-	ScheduleType string          `json:"schedule_type"`
-	ScheduleExpr string          `json:"schedule_expr"`
-	NextRunAt    string          `json:"next_run_at"`
-	LastRunAt    string          `json:"last_run_at,omitempty"`
-	Enabled      bool            `json:"enabled"`
-}
-
-// exportInbound is a serializable inbound representation.
-type exportInbound struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Address      string `json:"address"`
-	Port         int    `json:"port"`
-	SNI          string `json:"sni"`
-	Handshake    string `json:"handshake"`
-	PublicKey    string `json:"public_key"`
-	PrivateKey   string `json:"private_key"`
-	ShortID      string `json:"short_id"`
-	Fingerprint  string `json:"fingerprint"`
-	NameTemplate string `json:"name_template"`
 }
 
 // exportPublicSource is a serializable public source representation.
@@ -105,7 +69,6 @@ type exportPublicSource struct {
 type exportToken struct {
 	Owner       string   `json:"owner"`
 	GroupIDs    []string `json:"group_ids"`
-	InboundIDs  []string `json:"inbound_ids"`
 	IsActive    bool     `json:"is_active"`
 	QuotaBytes  *int64   `json:"quota_bytes,omitempty"`
 	QuotaPeriod string   `json:"quota_period"`
@@ -117,21 +80,17 @@ type ExportOutput struct {
 	Body struct {
 		Nodes         []exportNode         `json:"nodes"`
 		Groups        []exportGroup        `json:"groups"`
-		TopUps        []exportTopUp        `json:"top_ups"`
-		Inbounds      []exportInbound      `json:"inbounds"`
 		PublicSources []exportPublicSource `json:"public_sources"`
 		Tokens        []exportToken        `json:"tokens"`
 	}
 }
 
 // ImportInput accepts a configuration to import. Groups and nodes are required;
-// top_ups, inbounds, public_sources and tokens are optional.
+// public_sources and tokens are optional.
 type ImportInput struct {
 	Body struct {
 		Nodes         []exportNode         `json:"nodes"`
 		Groups        []exportGroup        `json:"groups"`
-		TopUps        []exportTopUp        `json:"top_ups,omitempty"`
-		Inbounds      []exportInbound      `json:"inbounds,omitempty"`
 		PublicSources []exportPublicSource `json:"public_sources,omitempty"`
 		Tokens        []exportToken        `json:"tokens,omitempty"`
 	}
@@ -158,16 +117,6 @@ func (h *ImportExportHandler) Export(ctx context.Context, _ *struct{}) (*ExportO
 		return nil, err
 	}
 
-	out.Body.TopUps, err = h.exportTopUps(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	out.Body.Inbounds, err = h.exportInbounds(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	out.Body.PublicSources, err = h.exportPublicSources(ctx)
 	if err != nil {
 		return nil, err
@@ -185,23 +134,18 @@ func (h *ImportExportHandler) Export(ctx context.Context, _ *struct{}) (*ExportO
 func (h *ImportExportHandler) Import(ctx context.Context, input *ImportInput) (*struct{}, error) {
 	const maxItems = 10000
 	if len(input.Body.Nodes) > maxItems || len(input.Body.Groups) > maxItems ||
-		len(input.Body.TopUps) > maxItems || len(input.Body.Inbounds) > maxItems ||
 		len(input.Body.PublicSources) > maxItems || len(input.Body.Tokens) > maxItems {
 		return nil, huma.Error400BadRequest(fmt.Sprintf("too many items: max %d per category", maxItems))
 	}
 
 	h.importGroups(ctx, input.Body.Groups)
-	h.importTopUps(ctx, input.Body.TopUps)
 	h.importNodes(ctx, input.Body.Nodes)
-	h.importInbounds(ctx, input.Body.Inbounds)
 	h.importPublicSources(ctx, input.Body.PublicSources)
 	h.importTokens(ctx, input.Body.Tokens)
 
 	h.logger.Info("configuration imported",
 		slog.Int("groups", len(input.Body.Groups)),
-		slog.Int("top_ups", len(input.Body.TopUps)),
 		slog.Int("nodes", len(input.Body.Nodes)),
-		slog.Int("inbounds", len(input.Body.Inbounds)),
 		slog.Int("public_sources", len(input.Body.PublicSources)),
 		slog.Int("tokens", len(input.Body.Tokens)),
 	)

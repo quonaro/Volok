@@ -20,7 +20,6 @@ import (
 	"outless/internal/country"
 	"outless/internal/domain"
 	"outless/internal/service"
-	"outless/internal/topup/checker"
 	"outless/internal/utils"
 	"outless/shared/config"
 	"outless/shared/logging"
@@ -104,10 +103,8 @@ func runServer(ctx context.Context, nctx engine.NativeContext) error {
 	nodeRepo := repository.NewNodeRepository(db, logger)
 	tokenRepo := repository.NewTokenRepository(db, logger)
 	groupRepo := repository.NewGroupRepository(db, logger)
-	topUpRepo := repository.NewGroupTopUpRepository(db, logger)
 	publicSourceRepo := repository.NewPublicSourceRepository(db, logger)
 	adminRepo := repository.NewAdminRepository(db, logger, cfg.JWT.Secret)
-	inboundRepo := repository.NewInboundRepository(db, logger)
 
 	if err := adminRepo.MigrateTOTPSecrets(ctx); err != nil {
 		logger.Warn("totp secret migration failed", slog.String("error", err.Error()))
@@ -151,9 +148,6 @@ func runServer(ctx context.Context, nctx engine.NativeContext) error {
 		countryResolver = country.NewResolver(&http.Client{Timeout: cfg.App.CountryLookup.Timeout})
 	}
 
-	topUpChecker := checker.New(logger, countryResolver)
-	topUpScheduler := service.NewTopUpScheduler(topUpRepo, groupRepo, nodeRepo, topUpChecker, logger)
-
 	// Country lookup watcher
 	countryWatcher := service.NewCountryWatcher(
 		nodeRepo,
@@ -167,11 +161,14 @@ func runServer(ctx context.Context, nctx engine.NativeContext) error {
 		},
 	)
 
+	// Inbounds are config-defined, not database-managed.
+	inbounds := buildDomainInbounds(cfg.Inbounds, logger)
+
 	// Runtime controller (embedded sing-box)
-	runtime := singbox.NewRuntimeController(logger, tokenRepo, nodeRepo, inboundRepo, cfg.App.SingboxLogLevel, 0, broadcaster.Broadcast)
+	runtime := singbox.NewRuntimeController(logger, tokenRepo, nodeRepo, inbounds, cfg.App.SingboxLogLevel, 0, broadcaster.Broadcast)
 	logger.Info("using embedded sing-box runtime")
 
-	subscriptionService := service.NewSubscriptionService(nodeRepo, tokenRepo, groupRepo, inboundRepo, runtime, cfg.App.ExternalHost, logger)
+	subscriptionService := service.NewSubscriptionService(nodeRepo, tokenRepo, groupRepo, inbounds, runtime, cfg.App.ExternalHost, logger)
 
 	trafficRepo := repository.NewTrafficRepository(db)
 	trafficCollector := service.NewTrafficCollector(runtime, trafficRepo, tokenRepo, logger)
@@ -184,23 +181,21 @@ func runServer(ctx context.Context, nctx engine.NativeContext) error {
 	handlers := httpadapter.Handlers{
 		Subscription:        httpadapter.NewSubscriptionHandler(subscriptionService, tokenRepo, logger),
 		Auth:                httpadapter.NewAuthHandler(adminRepo, jwtService, totpService, cfg.App.SecureCookies, logger),
-		Token:               httpadapter.NewTokenManagementHandler(tokenRepo, groupRepo, nodeRepo, inboundRepo, runtime, logger),
+		Token:               httpadapter.NewTokenManagementHandler(tokenRepo, groupRepo, nodeRepo, runtime, logger),
 		Node:                httpadapter.NewNodeManagementHandler(nodeRepo, groupRepo, runtime, countryResolver, cfg.App.ExternalHost, logger),
-		Group:               httpadapter.NewGroupManagementHandler(groupRepo, topUpRepo, nodeRepo, subscriptionService, topUpScheduler, logger),
-		GroupTopUp:          httpadapter.NewGroupTopUpManagementHandler(topUpRepo, groupRepo, topUpScheduler, logger),
+		Group:               httpadapter.NewGroupManagementHandler(groupRepo, nodeRepo, subscriptionService, logger),
 		PublicSource:        httpadapter.NewPublicSourceManagementHandler(publicSourceRepo, groupRepo, publicService, logger),
-		Inbound:             httpadapter.NewInboundManagementHandler(inboundRepo, runtime, logger),
+		Inbound:             httpadapter.NewInboundManagementHandler(inbounds, runtime, logger),
 		Settings:            httpadapter.NewSettingsHandler(cfgPath, logger),
 		Admin:               httpadapter.NewAdminManagementHandler(adminRepo, logger),
-		Stats:               httpadapter.NewStatsHandler(nodeRepo, tokenRepo, groupRepo, inboundRepo, trafficRepo, logger),
+		Stats:               httpadapter.NewStatsHandler(nodeRepo, tokenRepo, groupRepo, trafficRepo, logger),
 		System:              systemHandler,
 		Traffic:             httpadapter.NewTrafficHandler(trafficRepo, tokenRepo, logger),
 		Connections:         httpadapter.NewConnectionsHandler(runtime, logger),
 		StreamConnections:   httpadapter.NewStreamConnectionsHandler(runtime, logger),
 		StreamSystemMetrics: httpadapter.NewStreamSystemMetricsHandler(systemHandler, logger),
-		ImportExport:        httpadapter.NewImportExportHandler(nodeRepo, tokenRepo, groupRepo, topUpRepo, publicSourceRepo, inboundRepo, logger),
+		ImportExport:        httpadapter.NewImportExportHandler(nodeRepo, tokenRepo, groupRepo, publicSourceRepo, logger),
 		LogStream:           httpadapter.NewLogStreamHandler(broadcaster),
-		TopUpStream:         httpadapter.NewTopUpStreamHandler(topUpScheduler, logger),
 	}
 
 	v := version
@@ -235,11 +230,6 @@ func runServer(ctx context.Context, nctx engine.NativeContext) error {
 	}
 	defer func() {
 		_ = cleanupService.Stop()
-	}()
-
-	topUpScheduler.Start()
-	defer func() {
-		topUpScheduler.Stop()
 	}()
 
 	countryWatcher.RunAsync(ctx)
@@ -357,6 +347,50 @@ func resetAdminPassword(ctx context.Context, nctx engine.NativeContext) error {
 
 	_, _ = fmt.Fprintf(nctx.Stdout, "Password reset for admin %q\n", username)
 	return nil
+}
+
+// buildDomainInbounds converts config-defined inbounds into domain.Inbound
+// entities used by the runtime and subscription service.
+func buildDomainInbounds(cfg config.InboundsConfig, logger *slog.Logger) []domain.Inbound {
+	now := time.Now().UTC()
+	var inbounds []domain.Inbound
+
+	if cfg.VLESS != nil && cfg.VLESS.Enable {
+		publicKey, err := config.DeriveRealityPublicKey(cfg.VLESS.PrivateKey)
+		if err != nil {
+			logger.Error("failed to derive reality public key", slog.String("error", err.Error()))
+		}
+		inbounds = append(inbounds, domain.Inbound{
+			ID:           domain.InboundTypeVLESS,
+			Name:         "VLESS REALITY",
+			Type:         domain.InboundTypeVLESS,
+			Address:      cfg.VLESS.Listen,
+			Port:         cfg.VLESS.Port,
+			SNI:          cfg.VLESS.SNI,
+			Handshake:    cfg.VLESS.Handshake,
+			PublicKey:    publicKey,
+			PrivateKey:   cfg.VLESS.PrivateKey,
+			ShortID:      cfg.VLESS.ShortID,
+			Fingerprint:  cfg.VLESS.Fingerprint,
+			NameTemplate: cfg.VLESS.NameTemplate,
+			CreatedAt:    now,
+			UpdatedAt:    now,
+		})
+	}
+
+	if cfg.Mixed != nil && cfg.Mixed.Enable {
+		inbounds = append(inbounds, domain.Inbound{
+			ID:        domain.InboundTypeMixed,
+			Name:      "Mixed Proxy",
+			Type:      domain.InboundTypeMixed,
+			Address:   cfg.Mixed.Listen,
+			Port:      cfg.Mixed.Port,
+			CreatedAt: now,
+			UpdatedAt: now,
+		})
+	}
+
+	return inbounds
 }
 
 func showVersion(_ context.Context, nctx engine.NativeContext) error {

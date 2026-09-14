@@ -410,8 +410,7 @@ async function handleSave(options?: { danger?: boolean }) {
         <UiCard class="p-4">
           <CardContent class="p-0 space-y-4">
             <p class="text-sm text-muted-foreground">
-              Export or import your full configuration (nodes, tokens, groups, inbounds, public
-              sources).
+              Export or import your full configuration (nodes, tokens, groups, public sources).
             </p>
             <div class="flex gap-2">
               <UiButton @click="handleExport">

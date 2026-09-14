@@ -43,14 +43,6 @@ type tokenGroupModel struct {
 
 func (tokenGroupModel) TableName() string { return "token_groups" }
 
-type tokenInboundModel struct {
-	TokenID   string    `gorm:"column:token_id;primaryKey"`
-	InboundID string    `gorm:"column:inbound_id;primaryKey"`
-	CreatedAt time.Time `gorm:"column:created_at"`
-}
-
-func (tokenInboundModel) TableName() string { return "token_inbounds" }
-
 type tokenIPRestrictionModel struct {
 	TokenID string `gorm:"column:token_id;primaryKey"`
 	IP      string `gorm:"column:ip;primaryKey"`
@@ -75,7 +67,6 @@ func (r *TokenRepository) IssueToken(
 	ctx context.Context,
 	owner string,
 	groupIDs []string,
-	inboundIDs []string,
 	expiresAt time.Time,
 	quotaBytes *int64,
 	quotaPeriod string,
@@ -132,12 +123,6 @@ func (r *TokenRepository) IssueToken(
 				return fmt.Errorf("creating token_groups link: %w", err)
 			}
 		}
-		for _, inboundID := range uniqueNonEmpty(inboundIDs) {
-			link := tokenInboundModel{TokenID: tokenID, InboundID: inboundID, CreatedAt: now}
-			if err := tx.Create(&link).Error; err != nil {
-				return fmt.Errorf("creating token_inbounds link: %w", err)
-			}
-		}
 		return nil
 	})
 	if txErr != nil {
@@ -146,8 +131,8 @@ func (r *TokenRepository) IssueToken(
 
 	r.logger.Info("subscription token issued",
 		slog.String("token_id", model.ID), slog.String("owner", owner),
-		slog.Int("group_count", len(groupIDs)), slog.Int("inbound_count", len(inboundIDs)))
-	return toDomainToken(model, uniqueNonEmpty(groupIDs), uniqueNonEmpty(inboundIDs)), plainToken, nil
+		slog.Int("group_count", len(groupIDs)))
+	return toDomainToken(model, uniqueNonEmpty(groupIDs)), plainToken, nil
 }
 
 // ValidateToken verifies token activity and expiration.
@@ -204,13 +189,9 @@ func (r *TokenRepository) List(ctx context.Context) ([]domain.Token, error) {
 	if err != nil {
 		return nil, err
 	}
-	inboundIDsMap, err := r.loadInboundIDsByTokenIDs(ctx, extractTokenIDs(models))
-	if err != nil {
-		return nil, err
-	}
 	tokens := make([]domain.Token, 0, len(models))
 	for _, model := range models {
-		tokens = append(tokens, toDomainToken(model, groupIDsMap[model.ID], inboundIDsMap[model.ID]))
+		tokens = append(tokens, toDomainToken(model, groupIDsMap[model.ID]))
 	}
 	return tokens, nil
 }
@@ -227,13 +208,9 @@ func (r *TokenRepository) ListActive(ctx context.Context, at time.Time) ([]domai
 	if err != nil {
 		return nil, err
 	}
-	inboundIDsMap, err := r.loadInboundIDsByTokenIDs(ctx, extractTokenIDs(models))
-	if err != nil {
-		return nil, err
-	}
 	tokens := make([]domain.Token, 0, len(models))
 	for _, model := range models {
-		tokens = append(tokens, toDomainToken(model, groupIDsMap[model.ID], inboundIDsMap[model.ID]))
+		tokens = append(tokens, toDomainToken(model, groupIDsMap[model.ID]))
 	}
 	return tokens, nil
 }
@@ -258,11 +235,7 @@ func (r *TokenRepository) GetTokenByPlain(ctx context.Context, token string, at 
 	if err != nil {
 		return domain.Token{}, err
 	}
-	inboundIDsMap, err := r.loadInboundIDsByTokenIDs(ctx, []string{model.ID})
-	if err != nil {
-		return domain.Token{}, err
-	}
-	return toDomainToken(model, groupIDsMap[model.ID], inboundIDsMap[model.ID]), nil
+	return toDomainToken(model, groupIDsMap[model.ID]), nil
 }
 
 // FindByID retrieves a token by its ID.
@@ -279,11 +252,7 @@ func (r *TokenRepository) FindByID(ctx context.Context, id string) (domain.Token
 	if err != nil {
 		return domain.Token{}, err
 	}
-	inboundIDsMap, err := r.loadInboundIDsByTokenIDs(ctx, []string{model.ID})
-	if err != nil {
-		return domain.Token{}, err
-	}
-	return toDomainToken(model, groupIDsMap[model.ID], inboundIDsMap[model.ID]), nil
+	return toDomainToken(model, groupIDsMap[model.ID]), nil
 }
 
 // Deactivate disables a token by ID.
@@ -312,14 +281,11 @@ func (r *TokenRepository) Activate(ctx context.Context, id string) error {
 	return nil
 }
 
-// Remove permanently deletes a token by ID and its group/inbound links.
+// Remove permanently deletes a token by ID and its group links.
 func (r *TokenRepository) Remove(ctx context.Context, id string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("token_id = ?", id).Delete(&tokenGroupModel{}).Error; err != nil {
 			return fmt.Errorf("deleting token group links: %w", err)
-		}
-		if err := tx.Where("token_id = ?", id).Delete(&tokenInboundModel{}).Error; err != nil {
-			return fmt.Errorf("deleting token inbound links: %w", err)
 		}
 		result := tx.Where("id = ?", id).Delete(&tokenModel{})
 		if result.Error != nil {
@@ -347,9 +313,6 @@ func (r *TokenRepository) CleanupExpired(ctx context.Context, cutoff time.Time) 
 		if err := tx.Where("token_id IN ?", expiredIDs).Delete(&tokenGroupModel{}).Error; err != nil {
 			return fmt.Errorf("deleting expired token group links: %w", err)
 		}
-		if err := tx.Where("token_id IN ?", expiredIDs).Delete(&tokenInboundModel{}).Error; err != nil {
-			return fmt.Errorf("deleting expired token inbound links: %w", err)
-		}
 		result := tx.Where("id IN ?", expiredIDs).Delete(&tokenModel{})
 		if result.Error != nil {
 			return fmt.Errorf("deleting expired tokens: %w", result.Error)
@@ -366,13 +329,12 @@ func (r *TokenRepository) CleanupExpired(ctx context.Context, cutoff time.Time) 
 	return deleted, nil
 }
 
-// Update modifies token owner, group IDs, inbound IDs, expiration and quota.
+// Update modifies token owner, group IDs, expiration and quota.
 func (r *TokenRepository) Update(
 	ctx context.Context,
 	id string,
 	owner string,
 	groupIDs []string,
-	inboundIDs []string,
 	expiresAt time.Time,
 	quotaBytes *int64,
 	quotaPeriod string,
@@ -417,15 +379,6 @@ func (r *TokenRepository) Update(
 			link := tokenGroupModel{TokenID: id, GroupID: groupID, CreatedAt: now}
 			if err := tx.Create(&link).Error; err != nil {
 				return fmt.Errorf("creating token_groups link: %w", err)
-			}
-		}
-		if err := tx.Where("token_id = ?", id).Delete(&tokenInboundModel{}).Error; err != nil {
-			return fmt.Errorf("deleting old inbound links: %w", err)
-		}
-		for _, inboundID := range uniqueNonEmpty(inboundIDs) {
-			link := tokenInboundModel{TokenID: id, InboundID: inboundID, CreatedAt: now}
-			if err := tx.Create(&link).Error; err != nil {
-				return fmt.Errorf("creating token_inbounds link: %w", err)
 			}
 		}
 		return nil
@@ -523,10 +476,9 @@ func (r *TokenRepository) ReissueToken(ctx context.Context, id string) (domain.T
 	}
 
 	groupIDs, _ := r.loadGroupIDsByTokenIDs(ctx, []string{id})
-	inboundIDs, _ := r.loadInboundIDsByTokenIDs(ctx, []string{id})
 
 	r.logger.Info("token reissued", slog.String("token_id", id))
-	return toDomainToken(model, groupIDs[id], inboundIDs[id]), plainToken, nil
+	return toDomainToken(model, groupIDs[id]), plainToken, nil
 }
 
 // AddIPRestriction adds an IP restriction for a token.
@@ -609,24 +561,7 @@ func (r *TokenRepository) loadGroupIDsByTokenIDs(ctx context.Context, tokenIDs [
 	return out, nil
 }
 
-func (r *TokenRepository) loadInboundIDsByTokenIDs(ctx context.Context, tokenIDs []string) (map[string][]string, error) {
-	if len(tokenIDs) == 0 {
-		return map[string][]string{}, nil
-	}
-	rows := make([]tokenInboundModel, 0, len(tokenIDs))
-	if err := r.db.WithContext(ctx).
-		Where("token_id IN ?", tokenIDs).
-		Order("created_at ASC").Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("loading token inbound links: %w", err)
-	}
-	out := make(map[string][]string, len(tokenIDs))
-	for _, row := range rows {
-		out[row.TokenID] = append(out[row.TokenID], row.InboundID)
-	}
-	return out, nil
-}
-
-func toDomainToken(model tokenModel, groupIDs []string, inboundIDs []string) domain.Token {
+func toDomainToken(model tokenModel, groupIDs []string) domain.Token {
 	groupIDs = uniqueNonEmpty(groupIDs)
 	legacyGroupID := derefString(model.GroupID)
 	if len(groupIDs) == 0 && legacyGroupID != "" {
@@ -641,7 +576,6 @@ func toDomainToken(model tokenModel, groupIDs []string, inboundIDs []string) dom
 		Owner:           model.Owner,
 		GroupID:         primaryGroupID,
 		GroupIDs:        groupIDs,
-		InboundIDs:      uniqueNonEmpty(inboundIDs),
 		UUID:            model.UUID,
 		AccessURL:       model.AccessURL,
 		IsActive:        model.IsActive,

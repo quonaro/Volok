@@ -69,21 +69,6 @@ func (h *NodeManagementHandler) validateAndBuildCreateNode(ctx context.Context, 
 		return domain.Node{}, huma.Error400BadRequest("group_ids is required")
 	}
 
-	for _, groupID := range input.Body.GroupIDs {
-		group, err := h.groupRepo.FindByID(ctx, groupID)
-		if err != nil {
-			if errors.Is(err, domain.ErrGroupNotFound) {
-				h.logger.Warn("group not found", slog.String("group_id", groupID))
-				return domain.Node{}, huma.Error400BadRequest("group not found")
-			}
-			h.logger.Error("failed to find group", slog.String("group_id", groupID), slog.String("error", err.Error()))
-			return domain.Node{}, huma.Error500InternalServerError("failed to validate group")
-		}
-		if group.IsTopUp {
-			return domain.Node{}, huma.Error400BadRequest("cannot add nodes to a top-up group")
-		}
-	}
-
 	if input.Body.IsSelf {
 		exists, err := h.nodeRepo.HasSelfNode(ctx)
 		if err != nil {

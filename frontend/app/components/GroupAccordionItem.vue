@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useQuery } from '@tanstack/vue-query'
 import type { Group } from '~/utils/schemas/group'
 import type { Node } from '~/utils/schemas/node'
 import { useGroupNodesInfinite } from '~/composables/nodes/useGroupNodesInfinite'
+import { fetchInbounds } from '~/utils/services/inbound'
 import UiButton from '~/components/ui/button/button.vue'
 import CardContent from '~/components/ui/card/CardContent.vue'
 import NodeCard from '~/components/NodeCard.vue'
-import { useInbounds } from '~/composables/inbounds/useInbounds'
 import {
   Dialog,
   DialogContent,
@@ -25,6 +26,7 @@ import {
 } from '~/components/ui/sheet'
 import UiInput from '~/components/ui/input/input.vue'
 import UiLabel from '~/components/ui/label/label.vue'
+import UiSelect from '~/components/ui/select/select.vue'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,14 +48,13 @@ const props = withDefaults(
   { allGroups: () => [] }
 )
 
-const { data: inbounds } = useInbounds()
-
 const emit = defineEmits<{
   removeNode: [node: Node]
   editGroup: [
     group: {
       id: string
       name: string
+      inbound_id: string
       random_enabled: boolean
       random_limit: number | null
       show_origins: boolean
@@ -69,10 +70,27 @@ const accordionOpen = ref(false)
 const editDialogOpen = ref(false)
 const deleteDialogOpen = ref(false)
 const editName = ref('')
+const editInboundId = ref('')
 const editRandomEnabled = ref(false)
 const editRandomLimit = ref<string>('')
 const editShowOrigins = ref(false)
 const canSaveEdit = computed(() => editName.value.trim().length > 0 && !props.editingGroup)
+
+const { data: inbounds } = useQuery({
+  queryKey: ['inbounds'],
+  queryFn: () => fetchInbounds(),
+})
+const inboundOptions = computed(() => [
+  { label: 'None', value: '' },
+  ...(inbounds.value ?? []).map((ib) => ({ label: ib.type, value: ib.id })),
+])
+
+const selectedInbound = computed(() => inbounds.value?.find((ib) => ib.id === editInboundId.value))
+const canShowOrigins = computed(() => selectedInbound.value?.type === 'vless')
+
+watch(canShowOrigins, (allowed) => {
+  if (!allowed) editShowOrigins.value = false
+})
 
 const accordionStorageKey = computed(() => `outless:nodes:group-accordion:${props.group.id}`)
 
@@ -156,6 +174,7 @@ watch(accordionOpen, (value) => {
 
 function openEditDialog() {
   editName.value = props.group.name
+  editInboundId.value = props.group.inbound_id ?? ''
   editRandomEnabled.value = props.group.random_enabled ?? false
   editRandomLimit.value = props.group.random_limit?.toString() ?? ''
   editShowOrigins.value = props.group.show_origins ?? false
@@ -166,9 +185,10 @@ function confirmEdit() {
   emit('editGroup', {
     id: props.group.id,
     name: editName.value.trim(),
+    inbound_id: editInboundId.value,
     random_enabled: editRandomEnabled.value,
     random_limit: editRandomLimit.value ? parseInt(editRandomLimit.value) : null,
-    show_origins: editShowOrigins.value,
+    show_origins: canShowOrigins.value ? editShowOrigins.value : false,
   })
   editDialogOpen.value = false
 }
@@ -260,7 +280,6 @@ function confirmEditGroups() {
             <NodeCard
               class="flex-1"
               :node="node"
-              :inbounds="inbounds ?? []"
               show-actions
               :deleting="props.deletingIds.has(node.id)"
               @edit-groups="openEditGroupsDialog"
@@ -297,6 +316,10 @@ function confirmEditGroups() {
           <UiLabel for="edit-name">Name</UiLabel>
           <UiInput id="edit-name" v-model="editName" placeholder="Group name" />
         </div>
+        <div class="space-y-2">
+          <UiLabel for="edit-inbound">Inbound</UiLabel>
+          <UiSelect id="edit-inbound" v-model="editInboundId" :options="inboundOptions" />
+        </div>
         <div class="flex items-center gap-2">
           <input
             id="edit-random-enabled"
@@ -327,8 +350,16 @@ function confirmEditGroups() {
             v-model="editShowOrigins"
             type="checkbox"
             class="h-4 w-4 rounded border-input"
+            :disabled="!canShowOrigins"
           />
-          <label for="edit-show-origins" class="text-sm">Show direct node links</label>
+          <label
+            for="edit-show-origins"
+            class="text-sm"
+            :class="{ 'text-muted-foreground': !canShowOrigins }"
+          >
+            Show direct node links
+            <span v-if="!canShowOrigins" class="text-xs">(VLESS only)</span>
+          </label>
         </div>
       </div>
       <SheetFooter>

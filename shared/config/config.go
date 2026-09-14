@@ -13,9 +13,10 @@ import (
 
 // Config holds unified configuration for the Outless monolith.
 type Config struct {
-	App      AppConfig `yaml:"app"`
-	JWT      JWTConfig `yaml:"jwt"`
-	Database Database  `yaml:"database"`
+	App      AppConfig      `yaml:"app"`
+	JWT      JWTConfig      `yaml:"jwt"`
+	Database Database       `yaml:"database"`
+	Inbounds InboundsConfig `yaml:"inbounds"`
 }
 
 // AppConfig holds application-wide settings.
@@ -54,6 +55,33 @@ type Database string
 type JWTConfig struct {
 	Secret string        `yaml:"secret"`
 	Expiry time.Duration `yaml:"expiry"`
+}
+
+// InboundsConfig holds inbound proxy definitions keyed by type.
+// Only one inbound per type is supported (e.g. "vless", "mixed").
+type InboundsConfig struct {
+	VLESS *VLESSInboundConfig `yaml:"vless"`
+	Mixed *MixedInboundConfig `yaml:"mixed"`
+}
+
+// VLESSInboundConfig defines a VLESS REALITY inbound.
+type VLESSInboundConfig struct {
+	Enable       bool   `yaml:"enable"`
+	Listen       string `yaml:"listen"`
+	Port         int    `yaml:"port"`
+	SNI          string `yaml:"sni"`
+	Handshake    string `yaml:"handshake"`
+	PrivateKey   string `yaml:"private_key"`
+	ShortID      string `yaml:"short_id"`
+	Fingerprint  string `yaml:"fingerprint"`
+	NameTemplate string `yaml:"name_template"`
+}
+
+// MixedInboundConfig defines a SOCKS5+HTTP mixed proxy inbound.
+type MixedInboundConfig struct {
+	Enable bool   `yaml:"enable"`
+	Listen string `yaml:"listen"`
+	Port   int    `yaml:"port"`
 }
 
 // defaultJWTSecret is the placeholder secret used before configuration is loaded.
@@ -128,6 +156,9 @@ func (c *Config) Validate() error {
 	}
 	if strings.TrimSpace(string(c.Database)) == "" {
 		return fmt.Errorf("database path cannot be empty")
+	}
+	if c.Inbounds.VLESS == nil && c.Inbounds.Mixed == nil {
+		return fmt.Errorf("at least one inbound must be configured")
 	}
 	return nil
 }

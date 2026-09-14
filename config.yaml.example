@@ -19,3 +19,18 @@ jwt:
   secret: CHANGE_ME_IN_PRODUCTION
   expiry: 24h0m0s
 database: ./outless.db
+inbounds:
+  vless:
+    enable: true
+    listen: 0.0.0.0
+    port: 443
+    sni: example.com
+    handshake: example.com
+    private_key: ""   # base64 x25519 private key (use outless keypair command to generate)
+    short_id: ""      # 16-char hex string
+    fingerprint: chrome
+    name_template: ""
+  mixed:
+    enable: false
+    listen: 0.0.0.0
+    port: 1080

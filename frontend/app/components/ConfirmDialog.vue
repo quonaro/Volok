@@ -20,7 +20,7 @@ const { state, onConfirm, onCancel } = useConfirm()
       }
     "
   >
-    <SheetContent>
+    <SheetContent class="z-[60]" overlay-class="z-[60]">
       <SheetHeader>
         <SheetTitle>{{ state.title }}</SheetTitle>
         <SheetDescription>{{ state.message }}</SheetDescription>

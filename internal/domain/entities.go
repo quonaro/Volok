@@ -7,6 +7,13 @@ import (
 	"time"
 )
 
+const (
+	// InboundTypeVLESS is the VLESS REALITY inbound type.
+	InboundTypeVLESS = "vless"
+	// InboundTypeMixed is the SOCKS5+HTTP mixed proxy inbound type.
+	InboundTypeMixed = "mixed"
+)
+
 // CountryInfo holds the ISO country code, full name, derived flag emoji,
 // and optional lookup/retry state used by the country watcher.
 type CountryInfo struct {
@@ -37,7 +44,6 @@ type Token struct {
 	Owner           string
 	GroupID         string
 	GroupIDs        []string
-	InboundIDs      []string
 	UUID            string
 	AccessURL       string
 	IsActive        bool
@@ -70,39 +76,12 @@ type TokenUsage struct {
 type Group struct {
 	ID            string
 	Name          string
+	InboundID     string
 	TotalNodes    int
 	RandomEnabled bool
 	RandomLimit   *int
-	IsTopUp       bool
 	ShowOrigins   bool
 	CreatedAt     time.Time
-}
-
-// GroupTopUp holds the auto-refill configuration for a group.
-type GroupTopUp struct {
-	ID           string
-	GroupID      string
-	URLs         []string
-	ParserType   string
-	ParserParams map[string]any
-	CheckEnabled bool
-	CheckConfig  TopUpCheckConfig
-	ScheduleType string
-	ScheduleExpr string
-	NextRunAt    time.Time
-	LastRunAt    *time.Time
-	Enabled      bool
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-}
-
-// TopUpCheckConfig mirrors Checker Options used for validating fetched nodes.
-type TopUpCheckConfig struct {
-	Workers          int
-	Timeout          time.Duration
-	ExcludeCountries []string
-	MaxLatency       time.Duration
-	Stages           []string
 }
 
 // PublicSource represents an external source of VLESS nodes.
@@ -114,10 +93,12 @@ type PublicSource struct {
 	CreatedAt     time.Time
 }
 
-// Inbound represents a VLESS REALITY entry point managed by Outless.
+// Inbound represents an entry point managed by Outless.
+// Type "vless" uses VLESS REALITY; Type "mixed" uses SOCKS5+HTTP proxy.
 type Inbound struct {
 	ID           string
 	Name         string
+	Type         string
 	Address      string
 	Port         int
 	SNI          string
@@ -150,15 +131,6 @@ func GenerateGroupID() (string, error) {
 	return fmt.Sprintf("grp_%d_%x", time.Now().UTC().Unix(), buf), nil
 }
 
-// GenerateGroupTopUpID creates a unique group top-up ID.
-func GenerateGroupTopUpID() (string, error) {
-	buf := make([]byte, 8)
-	if _, err := rand.Read(buf); err != nil {
-		return "", fmt.Errorf("generating group top-up id: %w", err)
-	}
-	return fmt.Sprintf("topup_%d_%x", time.Now().UTC().Unix(), buf), nil
-}
-
 // GeneratePublicSourceID creates a unique public source ID.
 func GeneratePublicSourceID() (string, error) {
 	buf := make([]byte, 8)
@@ -166,15 +138,6 @@ func GeneratePublicSourceID() (string, error) {
 		return "", fmt.Errorf("generating public source id: %w", err)
 	}
 	return fmt.Sprintf("pubsrc_%d_%x", time.Now().UTC().Unix(), buf), nil
-}
-
-// GenerateInboundID creates a unique inbound ID.
-func GenerateInboundID() (string, error) {
-	buf := make([]byte, 8)
-	if _, err := rand.Read(buf); err != nil {
-		return "", fmt.Errorf("generating inbound id: %w", err)
-	}
-	return fmt.Sprintf("inb_%d_%x", time.Now().UTC().Unix(), buf), nil
 }
 
 // NormalizeCountryCode uppercases a two-letter ISO 3166-1 alpha-2 code.
