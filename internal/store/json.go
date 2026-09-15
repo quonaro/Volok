@@ -95,6 +95,17 @@ func applyField(cfg *Config, key string, raw json.RawMessage) error {
 		return json.Unmarshal(raw, &cfg.PublicURL)
 	case "nodes":
 		return json.Unmarshal(raw, &cfg.Nodes)
+	case "proxy":
+		if string(raw) == "null" {
+			cfg.Proxy = nil
+			return nil
+		}
+		var p Proxy
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return fmt.Errorf("proxy: %w", err)
+		}
+		cfg.Proxy = &p
+		return nil
 	default:
 		return fmt.Errorf("parsing json: unknown field %q", key)
 	}

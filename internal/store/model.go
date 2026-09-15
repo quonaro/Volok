@@ -36,6 +36,26 @@ type Proxy struct {
 	SNI        string `json:"sni"`
 }
 
+// Validate checks the proxy identity fields.
+func (p *Proxy) Validate() error {
+	if p.UUID == "" {
+		return fmt.Errorf("uuid is empty")
+	}
+	if p.PrivateKey == "" || p.PublicKey == "" {
+		return fmt.Errorf("keys are empty")
+	}
+	if p.ShortID == "" {
+		return fmt.Errorf("short_id is empty")
+	}
+	if p.Port < 1 || p.Port > 65535 {
+		return fmt.Errorf("port must be 1..65535")
+	}
+	if p.SNI == "" {
+		return fmt.Errorf("sni is empty")
+	}
+	return nil
+}
+
 // Node is one direct VLESS endpoint stored in the library.
 type Node struct {
 	ID      string `json:"id"`
@@ -102,6 +122,12 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("node %s: duplicate endpoint %s", n.ID, endpoint)
 		}
 		endpoints[endpoint] = true
+	}
+
+	if c.Proxy != nil {
+		if err := c.Proxy.Validate(); err != nil {
+			return fmt.Errorf("proxy: %w", err)
+		}
 	}
 	return nil
 }
