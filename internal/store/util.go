@@ -3,6 +3,7 @@ package store
 import (
 	"crypto/ecdh"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"net"
@@ -40,14 +41,16 @@ func NewUUID() (string, error) {
 }
 
 // NewX25519Keys generates an X25519 key pair for REALITY.
-// Returns (privateKeyHex, publicKeyHex, error).
+// Returns (privateKeyBase64, publicKeyBase64, error) using RawURLEncoding
+// as expected by Xray and sing-box.
 func NewX25519Keys() (string, string, error) {
 	curve := ecdh.X25519()
 	priv, err := curve.GenerateKey(rand.Reader)
 	if err != nil {
 		return "", "", fmt.Errorf("generating x25519 key: %w", err)
 	}
-	return hex.EncodeToString(priv.Bytes()), hex.EncodeToString(priv.PublicKey().Bytes()), nil
+	return base64.RawURLEncoding.EncodeToString(priv.Bytes()),
+		base64.RawURLEncoding.EncodeToString(priv.PublicKey().Bytes()), nil
 }
 
 // NewShortID generates a random 8-byte hex short ID for REALITY.
