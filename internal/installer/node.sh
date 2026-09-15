@@ -23,8 +23,8 @@ EXPLICIT_NAME=false
 HOST=""
 PORT=""
 EXPLICIT_PORT=false
-SNI="yandex.ru"
-TARGET="yandex.ru:443"
+SNI="www.microsoft.com"
+TARGET="www.microsoft.com:443"
 FINGERPRINT="chrome"
 FLOW="xtls-rprx-vision"
 
@@ -61,8 +61,8 @@ Usage: bash -s -- [OPTIONS]
   --name NAME              display name (default: auto "<flag> <Country>#<4 digits>")
   --host HOST              public host/IP of this VPS (required or auto-detected)
   --port PORT              VLESS port (default: random 10000-65535)
-  --sni SNI                REALITY SNI (default: yandex.ru)
-  --target HOST:PORT       REALITY camouflage target (default: yandex.ru:443)
+  --sni SNI                REALITY SNI (default: www.microsoft.com)
+  --target HOST:PORT       REALITY camouflage target (default: www.microsoft.com:443)
   --fingerprint FP         uTLS fingerprint (default: chrome)
   --flow FLOW              VLESS flow (default: xtls-rprx-vision)
 EOF
