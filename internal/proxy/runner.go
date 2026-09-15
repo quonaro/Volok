@@ -5,10 +5,15 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strconv"
+
+	singbox "github.com/sagernet/sing-box"
+	"github.com/sagernet/sing-box/option"
 
 	"volok/internal/store"
 	"volok/internal/vless"
@@ -19,8 +24,48 @@ const (
 	defaultFingerprint = "chrome"
 )
 
+// Runner holds an in-process sing-box instance for the proxy relay.
+type Runner struct {
+	box *singbox.Box
+}
+
+// Start launches a sing-box proxy inside the current process.
+// It blocks until ctx is canceled, then shuts down the box.
+func (r *Runner) Start(ctx context.Context, cfg *store.Config) error {
+	if cfg.Proxy == nil {
+		return fmt.Errorf("proxy identity not set")
+	}
+
+	jsonConfig, err := BuildSingBoxConfig(cfg)
+	if err != nil {
+		return fmt.Errorf("building sing-box config: %w", err)
+	}
+
+	var opts option.Options
+	if err := json.Unmarshal([]byte(jsonConfig), &opts); err != nil {
+		return fmt.Errorf("parsing sing-box config: %w", err)
+	}
+
+	instance, err := singbox.New(singbox.Options{
+		Options: opts,
+		Context: ctx,
+	})
+	if err != nil {
+		return fmt.Errorf("creating sing-box instance: %w", err)
+	}
+	if err := instance.Start(); err != nil {
+		return fmt.Errorf("starting sing-box: %w", err)
+	}
+	r.box = instance
+
+	slog.Info("sing-box proxy started", "port", cfg.Proxy.Port, "sni", cfg.Proxy.SNI)
+
+	<-ctx.Done()
+	slog.Info("stopping sing-box proxy")
+	return r.box.Close()
+}
+
 // singBoxConfig is the minimal sing-box JSON structure Volok generates.
-// Field names match sing-box's expected JSON keys.
 type singBoxConfig struct {
 	Log       sbLog        `json:"log"`
 	Inbounds  []sbInbound  `json:"inbounds"`
@@ -107,7 +152,7 @@ type sbRoute struct {
 
 // BuildSingBoxConfig renders a sing-box JSON config for the router proxy.
 // The inbound is a VLESS+REALITY listener; each enabled node becomes an
-// outbound. A round-robin route rule sends traffic to the first outbound.
+// outbound. The first outbound is the default route.
 func BuildSingBoxConfig(cfg *store.Config) (string, error) {
 	if cfg.Proxy == nil {
 		return "", fmt.Errorf("proxy identity not set")
@@ -224,7 +269,6 @@ func ProxyLink(cfg *store.Config, n store.Node, opts struct{ NoVision, XHTTP boo
 	}
 	p := cfg.Proxy
 
-	// Determine the router's public host from public_url.
 	origin, err := cfg.Canonical()
 	if err != nil {
 		return "", err
@@ -255,7 +299,6 @@ func ProxyLink(cfg *store.Config, n store.Node, opts struct{ NoVision, XHTTP boo
 	}
 	params.Set("sni", p.SNI)
 
-	// Preserve the display name from the node's direct link.
 	name := n.Name
 	if u, err := url.Parse(n.URL); err == nil && u.Fragment != "" {
 		name = u.Fragment

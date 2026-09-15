@@ -11,6 +11,7 @@ import (
 	"github.com/quonaro/lota/engine"
 
 	"volok/internal/httpserver"
+	"volok/internal/proxy"
 	"volok/internal/store"
 )
 
@@ -60,12 +61,23 @@ func runServe(_ context.Context, nctx engine.NativeContext) error {
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(ln) }()
 
+	// Start the embedded sing-box proxy when a proxy identity is configured.
+	var proxyErr chan error
+	if cfg.Proxy != nil {
+		proxyErr = make(chan error, 1)
+		runner := &proxy.Runner{}
+		go func() { proxyErr <- runner.Start(ctx, cfg) }()
+		green(nctx.Stdout, "proxy relay on :%d\n", cfg.Proxy.Port)
+	}
+
 	green(nctx.Stdout, "volok serving on %s\n", addr)
 	select {
 	case <-ctx.Done():
 		fmt.Fprintln(nctx.Stdout, "shutting down")
 		return nil
 	case err := <-serveErr:
+		return err
+	case err := <-proxyErr:
 		return err
 	}
 }
