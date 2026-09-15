@@ -1,10 +1,10 @@
 vars:
-  - BINARY=volok
-  - GO_LDFLAGS=-s -w
+- BINARY=volok
+- GO_LDFLAGS=-s -w
 
 build:
   desc: Build for different platforms
-  native:
+  host:
     desc: Build for the host platform
     script: |
       CGO_ENABLED=0 go build -trimpath -ldflags="$GO_LDFLAGS" -o "$BINARY" ./cmd/volok
@@ -39,3 +39,17 @@ test:
   desc: Run Go tests
   script: |
     go test ./...
+
+push:
+  desc: Push to GitHub
+  color: cyan
+  args:
+  - "tag:str?"
+  script: |
+    if [ -n "$tag" ]; then
+      git tag -f "$tag"
+      git push origin main
+      git push origin "$tag" --force
+    else
+      git push origin main
+    fi
