@@ -211,10 +211,6 @@ generate_identity() {
 	PRIVATE_KEY="$(echo "$KEY_OUT" | awk -F': ' '/^PrivateKey:/ {print $2}')"
 	PUBLIC_KEY="$(echo "$KEY_OUT" | awk -F': ' '/^Password/ {print $2}')"
 	[[ -n "$PRIVATE_KEY" && -n "$PUBLIC_KEY" ]] || die "could not parse x25519 keys"
-	MLDSA_OUT="$("$INSTALL_DIR/xray" mldsa65)"
-	MLDSA_SEED="$(echo "$MLDSA_OUT" | awk -F': ' '/^Seed:/ {print $2}')"
-	MLDSA_VERIFY="$(echo "$MLDSA_OUT" | awk -F': ' '/^Verify:/ {print $2}')"
-	[[ -n "$MLDSA_SEED" && -n "$MLDSA_VERIFY" ]] || die "could not parse mldsa65 keys"
 	SHORT_ID="$(od -An -tx1 -N8 /dev/urandom | tr -d ' \n')"
 	[[ -z "$PORT" ]] && PORT=443
 	[[ -z "$HOST" ]] && HOST="$(detect_public_ip)"
@@ -248,20 +244,7 @@ load_identity() {
 		PUBLIC_KEY="$(jq -r '.inbounds[0].streamSettings.realitySettings.publicKey' "$CONFIG_DIR/config.json")"
 		PRIVATE_KEY="$(jq -r '.inbounds[0].streamSettings.realitySettings.privateKey' "$CONFIG_DIR/config.json")"
 		SHORT_ID="$(jq -r '.inbounds[0].streamSettings.realitySettings.shortIds[0]' "$CONFIG_DIR/config.json")"
-		MLDSA_SEED="$(jq -r '.inbounds[0].streamSettings.realitySettings.mldsa65Seed // ""' "$CONFIG_DIR/config.json")"
-		MLDSA_VERIFY="$(jq -r '.inbounds[0].streamSettings.realitySettings.mldsa65Verify // ""' "$CONFIG_DIR/config.json")"
 	fi
-}
-
-# ensure_mldsa65 generates a post-quantum key pair when the node predates it.
-ensure_mldsa65() {
-	[[ -n "${MLDSA_SEED:-}" && -n "${MLDSA_VERIFY:-}" ]] && return 0
-	local out
-	out="$("$INSTALL_DIR/xray" mldsa65)"
-	MLDSA_SEED="$(echo "$out" | awk -F': ' '/^Seed:/ {print $2}')"
-	MLDSA_VERIFY="$(echo "$out" | awk -F': ' '/^Verify:/ {print $2}')"
-	[[ -n "$MLDSA_SEED" && -n "$MLDSA_VERIFY" ]] || die "could not parse mldsa65 keys"
-	log_info "mldsa65 key pair generated"
 }
 
 random_hex() {
@@ -331,8 +314,6 @@ generate_config() {
 		--arg private_key "$PRIVATE_KEY" \
 		--arg public_key "$PUBLIC_KEY" \
 		--arg short_id "$SHORT_ID" \
-		--arg seed "$MLDSA_SEED" \
-		--arg verify "$MLDSA_VERIFY" \
 		--arg fingerprint "$FINGERPRINT" \
 		'{
 			log: { loglevel: "warning" },
@@ -358,8 +339,6 @@ generate_config() {
 							publicKey: $public_key,
 							maxTimediff: 0,
 							shortIds: [$short_id],
-							mldsa65Seed: $seed,
-							mldsa65Verify: $verify,
 							fingerprint: $fingerprint,
 							spiderX: "/"
 						}
@@ -442,7 +421,7 @@ check_port() {
 build_link() {
 	local ip="$1"
 	local params
-	params="security=reality&encryption=none&fp=${FINGERPRINT}&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}&spx=%2F&flow=${FLOW}&type=tcp&headerType=none&sni=${SNI}&pqv=${MLDSA_VERIFY}"
+	params="security=reality&encryption=none&fp=${FINGERPRINT}&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}&spx=%2F&flow=${FLOW}&type=tcp&headerType=none&sni=${SNI}"
 	echo "vless://${UUID}@${ip}:${PORT}?${params}#$(url_encode "$NAME")"
 }
 
@@ -495,7 +474,6 @@ main() {
 
 	generate_identity
 	load_identity
-	ensure_mldsa65
 	generate_config
 
 	"$INSTALL_DIR/xray" run -test -config "$CONFIG_DIR/config.json" || die "xray config test failed"
