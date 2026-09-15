@@ -80,9 +80,9 @@ type sbTransport struct {
 type sbOutbound struct {
 	Type       string         `json:"type"`
 	Tag        string         `json:"tag"`
-	Server     string         `json:"server"`
-	ServerPort int            `json:"server_port"`
-	UUID       string         `json:"uuid"`
+	Server     string         `json:"server,omitempty"`
+	ServerPort int            `json:"server_port,omitempty"`
+	UUID       string         `json:"uuid,omitempty"`
 	Flow       string         `json:"flow,omitempty"`
 	TLS        *sbOutboundTLS `json:"tls,omitempty"`
 	Transport  *sbTransport   `json:"transport,omitempty"`
@@ -102,11 +102,7 @@ type sbRealityOut struct {
 }
 
 type sbRoute struct {
-	Rules []sbRule `json:"rules"`
-}
-
-type sbRule struct {
-	Outbound string `json:"outbound"`
+	Final string `json:"final,omitempty"`
 }
 
 // BuildSingBoxConfig renders a sing-box JSON config for the router proxy.
@@ -167,9 +163,7 @@ func BuildSingBoxConfig(cfg *store.Config) (string, error) {
 		Log:       sbLog{Level: "warn"},
 		Inbounds:  []sbInbound{inbound},
 		Outbounds: outbounds,
-		Route: sbRoute{
-			Rules: []sbRule{{Outbound: outbounds[1].Tag}},
-		},
+		Route:     sbRoute{Final: outbounds[1].Tag},
 	}
 
 	b, err := json.MarshalIndent(config, "", "  ")

@@ -32,7 +32,7 @@ func BuildWith(cfg *store.Config, opts Options) string {
 		}
 		link := n.URL
 		if opts.NoVision || opts.XHTTP {
-			link = transformLink(link, opts)
+			link = Transform(link, opts)
 		}
 		b.WriteString(link)
 		b.WriteString("\n")
@@ -40,8 +40,9 @@ func BuildWith(cfg *store.Config, opts Options) string {
 	return b.String()
 }
 
-// transformLink modifies a VLESS URL based on the given options.
-func transformLink(raw string, opts Options) string {
+// Transform modifies a VLESS URL based on the given options.
+// Exported for use by the httpserver all-mode.
+func Transform(raw string, opts Options) string {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return raw
