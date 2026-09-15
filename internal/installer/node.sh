@@ -304,10 +304,12 @@ detect_name() {
 
 generate_config() {
 	mkdir -p "$CONFIG_DIR"
+	local xhttp_port=$((PORT + 1))
 	jq -n \
 		--arg uuid "$UUID" \
 		--arg flow "$FLOW" \
 		--argjson port "$PORT" \
+		--argjson xhttp_port "$xhttp_port" \
 		--arg target "$TARGET" \
 		--arg sni "$SNI" \
 		--arg private_key "$PRIVATE_KEY" \
@@ -336,11 +338,35 @@ generate_config() {
 							fingerprint: $fingerprint
 						}
 					}
+				},
+				{
+					port: $xhttp_port,
+					protocol: "vless",
+					settings: {
+						clients: [{ id: $uuid }],
+						decryption: "none"
+					},
+					streamSettings: {
+						network: "xhttp",
+						security: "reality",
+						realitySettings: {
+							target: $target,
+							serverNames: [$sni],
+							privateKey: $private_key,
+							publicKey: $public_key,
+							shortIds: [$short_id],
+							fingerprint: $fingerprint
+						},
+						xhttpSettings: {
+							path: "/",
+							host: $sni
+						}
+					}
 				}
 			],
 			outbounds: [{ protocol: "freedom", tag: "direct" }]
 		}' > "$CONFIG_DIR/config.json"
-	log_info "xray config written"
+	log_info "xray config written (tcp:$PORT xhttp:$xhttp_port)"
 }
 
 create_service() {

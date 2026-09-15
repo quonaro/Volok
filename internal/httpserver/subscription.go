@@ -29,7 +29,7 @@ func (s *Server) handleSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body := subscription.Build(cfg)
+	body := subscription.BuildWith(cfg, subOptions(r))
 	if r.URL.Query().Get("format") == "base64" {
 		body = subscription.EncodeBase64(body)
 	}
@@ -55,4 +55,15 @@ func setSubscriptionHeaders(w http.ResponseWriter, cfg *store.Config) {
 func writeError(w http.ResponseWriter, status int, message string) {
 	noStoreHeaders(w)
 	http.Error(w, message, status)
+}
+
+// subOptions parses subscription transport options from query params.
+//   - vision=false  removes flow=xtls-rprx-vision
+//   - xhttp=true    switches transport to xhttp
+func subOptions(r *http.Request) subscription.Options {
+	q := r.URL.Query()
+	return subscription.Options{
+		NoVision: q.Get("vision") == "false",
+		XHTTP:    q.Get("xhttp") == "true",
+	}
 }
