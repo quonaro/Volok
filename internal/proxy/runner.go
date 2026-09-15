@@ -109,8 +109,8 @@ type sbRealityIn struct {
 }
 
 type sbHandshake struct {
-	Server string `json:"server"`
-	Port   int    `json:"port"`
+	Server     string `json:"server"`
+	ServerPort int    `json:"server_port"`
 }
 
 type sbUTLS struct {
@@ -175,8 +175,8 @@ func BuildSingBoxConfig(cfg *store.Config) (string, error) {
 			Reality: sbRealityIn{
 				Enabled: true,
 				Handshake: sbHandshake{
-					Server: p.SNI,
-					Port:   443,
+					Server:     p.SNI,
+					ServerPort: 443,
 				},
 				PrivateKey: p.PrivateKey,
 				ShortID:    []string{p.ShortID},
