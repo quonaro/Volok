@@ -22,6 +22,7 @@ NAME=""
 EXPLICIT_NAME=false
 HOST=""
 PORT=""
+EXPLICIT_PORT=false
 SNI="yandex.ru"
 TARGET="yandex.ru:443"
 FINGERPRINT="chrome"
@@ -72,7 +73,7 @@ parse_args() {
 		case "$1" in
 			--name) NAME="${2:-}"; EXPLICIT_NAME=true; shift 2 ;;
 			--host) HOST="${2:-}"; shift 2 ;;
-			--port) PORT="${2:-}"; shift 2 ;;
+			--port) PORT="${2:-}"; EXPLICIT_PORT=true; shift 2 ;;
 			--sni) SNI="${2:-}"; shift 2 ;;
 			--target) TARGET="${2:-}"; shift 2 ;;
 			--fingerprint) FINGERPRINT="${2:-}"; shift 2 ;;
@@ -190,6 +191,17 @@ generate_identity() {
 				log_info "node name updated to: $auto_name"
 			fi
 		fi
+		# An explicit --port updates the stored port for existing nodes.
+		if $EXPLICIT_PORT; then
+			local meta_port
+			meta_port="$(jq -r '.port' "$META_FILE")"
+			if [[ "$meta_port" != "$PORT" ]]; then
+				jq --argjson port "$PORT" '.port = $port' "$META_FILE" > "$META_FILE.tmp" \
+					&& mv "$META_FILE.tmp" "$META_FILE"
+				chmod 600 "$META_FILE"
+				log_info "node port updated to: $PORT"
+			fi
+		fi
 		return 0
 	fi
 
@@ -200,7 +212,7 @@ generate_identity() {
 	PUBLIC_KEY="$(echo "$KEY_OUT" | awk -F': ' '/^Password/ {print $2}')"
 	[[ -n "$PRIVATE_KEY" && -n "$PUBLIC_KEY" ]] || die "could not parse x25519 keys"
 	SHORT_ID="$(od -An -tx1 -N8 /dev/urandom | tr -d ' \n')"
-	[[ -z "$PORT" ]] && PORT="$(shuf -i 10000-65535 -n 1)"
+	[[ -z "$PORT" ]] && PORT=443
 	[[ -z "$HOST" ]] && HOST="$(detect_public_ip)"
 	if ! $EXPLICIT_NAME; then
 		NAME="$(detect_name "$HOST")"
@@ -222,6 +234,7 @@ EOF
 load_identity() {
 	[[ -f "$META_FILE" ]] || die "node metadata missing"
 	NODE_ID="$(jq -r '.node_id' "$META_FILE")"
+	# PORT from META already updated by generate_identity if --port was passed.
 	PORT="$(jq -r '.port' "$META_FILE")"
 	HOST="$(jq -r '.host' "$META_FILE")"
 	NAME="$(jq -r '.name' "$META_FILE")"
