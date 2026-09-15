@@ -15,6 +15,7 @@ import (
 	singbox "github.com/sagernet/sing-box"
 	"github.com/sagernet/sing-box/include"
 	"github.com/sagernet/sing-box/option"
+	singjson "github.com/sagernet/sing/common/json"
 
 	"volok/internal/store"
 	"volok/internal/vless"
@@ -42,14 +43,15 @@ func (r *Runner) Start(ctx context.Context, cfg *store.Config) error {
 		return fmt.Errorf("building sing-box config: %w", err)
 	}
 
+	registryCtx := include.Context(ctx)
 	var opts option.Options
-	if err := json.Unmarshal([]byte(jsonConfig), &opts); err != nil {
+	if err := singjson.UnmarshalContextDisallowUnknownFields(registryCtx, []byte(jsonConfig), &opts); err != nil {
 		return fmt.Errorf("parsing sing-box config: %w", err)
 	}
 
 	instance, err := singbox.New(singbox.Options{
 		Options: opts,
-		Context: include.Context(ctx),
+		Context: registryCtx,
 	})
 	if err != nil {
 		return fmt.Errorf("creating sing-box instance: %w", err)
@@ -98,7 +100,6 @@ type sbInboundTLS struct {
 	Enabled    bool        `json:"enabled"`
 	ServerName string      `json:"server_name"`
 	Reality    sbRealityIn `json:"reality"`
-	UTLS       sbUTLS      `json:"utls"`
 }
 
 type sbRealityIn struct {
@@ -181,7 +182,6 @@ func BuildSingBoxConfig(cfg *store.Config) (string, error) {
 				PrivateKey: p.PrivateKey,
 				ShortID:    []string{p.ShortID},
 			},
-			UTLS: sbUTLS{Enabled: true, Fingerprint: defaultFingerprint},
 		},
 	}
 
