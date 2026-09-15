@@ -87,7 +87,6 @@ type sbInbound struct {
 	ListenPort int          `json:"listen_port"`
 	Users      []sbUser     `json:"users"`
 	TLS        sbInboundTLS `json:"tls"`
-	Transport  *sbTransport `json:"transport,omitempty"`
 }
 
 type sbUser struct {
@@ -119,11 +118,6 @@ type sbUTLS struct {
 	Fingerprint string `json:"fingerprint"`
 }
 
-type sbTransport struct {
-	Type string `json:"type"`
-	Path string `json:"path,omitempty"`
-}
-
 type sbOutbound struct {
 	Type       string         `json:"type"`
 	Tag        string         `json:"tag"`
@@ -132,7 +126,6 @@ type sbOutbound struct {
 	UUID       string         `json:"uuid,omitempty"`
 	Flow       string         `json:"flow,omitempty"`
 	TLS        *sbOutboundTLS `json:"tls,omitempty"`
-	Transport  *sbTransport   `json:"transport,omitempty"`
 }
 
 type sbOutboundTLS struct {
@@ -168,7 +161,6 @@ func BuildSingBoxConfig(cfg *store.Config) (string, error) {
 		ListenPort: p.Port,
 		Users: []sbUser{
 			{Name: "volok", UUID: p.UUID, Flow: defaultFlow},
-			{Name: "volok-novision", UUID: p.UUID},
 		},
 		TLS: sbInboundTLS{
 			Enabled:    true,
@@ -253,18 +245,13 @@ func nodeToOutbound(n store.Node) (sbOutbound, error) {
 		ob.Flow = flow
 	}
 
-	if tp := q.Get("type"); tp == "xhttp" {
-		ob.Transport = &sbTransport{Type: "xhttp", Path: q.Get("path")}
-		ob.Flow = ""
-	}
-
 	return ob, nil
 }
 
 // ProxyLink builds a VLESS URL pointing at the router's proxy inbound.
 // The display name is taken from the node so the client shows the same
 // label as the direct link.
-func ProxyLink(cfg *store.Config, n store.Node, opts struct{ NoVision, XHTTP bool }) (string, error) {
+func ProxyLink(cfg *store.Config, n store.Node) (string, error) {
 	if cfg.Proxy == nil {
 		return "", fmt.Errorf("proxy identity not set")
 	}
@@ -276,11 +263,6 @@ func ProxyLink(cfg *store.Config, n store.Node, opts struct{ NoVision, XHTTP boo
 	}
 	host := origin.Hostname()
 
-	port := p.Port
-	if opts.XHTTP {
-		port++
-	}
-
 	params := url.Values{}
 	params.Set("encryption", "none")
 	params.Set("security", "reality")
@@ -288,16 +270,9 @@ func ProxyLink(cfg *store.Config, n store.Node, opts struct{ NoVision, XHTTP boo
 	params.Set("pbk", p.PublicKey)
 	params.Set("sid", p.ShortID)
 	params.Set("spx", "/")
-	if !opts.NoVision && !opts.XHTTP {
-		params.Set("flow", defaultFlow)
-	}
-	if opts.XHTTP {
-		params.Set("type", "xhttp")
-		params.Set("path", "/")
-	} else {
-		params.Set("type", "tcp")
-		params.Set("headerType", "none")
-	}
+	params.Set("flow", defaultFlow)
+	params.Set("type", "tcp")
+	params.Set("headerType", "none")
 	params.Set("sni", p.SNI)
 
 	name := n.Name
@@ -306,5 +281,5 @@ func ProxyLink(cfg *store.Config, n store.Node, opts struct{ NoVision, XHTTP boo
 	}
 
 	return fmt.Sprintf("vless://%s@%s:%s?%s#%s",
-		p.UUID, host, strconv.Itoa(port), params.Encode(), url.PathEscape(name)), nil
+		p.UUID, host, strconv.Itoa(p.Port), params.Encode(), url.PathEscape(name)), nil
 }
