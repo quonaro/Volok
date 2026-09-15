@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 
 	"github.com/quonaro/lota/engine"
@@ -59,9 +60,6 @@ func runNodeShow(_ context.Context, nctx engine.NativeContext) error {
 func runNodeAdd(_ context.Context, nctx engine.NativeContext) error {
 	name := nctx.Args["name"]
 	link := nctx.Args["url"]
-	if name == "" {
-		return fmt.Errorf("--name is required")
-	}
 	if nctx.Args["url-stdin"] == strTrue {
 		line, err := readLine(os.Stdin)
 		if err != nil {
@@ -71,6 +69,13 @@ func runNodeAdd(_ context.Context, nctx engine.NativeContext) error {
 	}
 	if link == "" {
 		return fmt.Errorf("--url or --url-stdin is required")
+	}
+	if name == "" {
+		var err error
+		name, err = linkName(link)
+		if err != nil {
+			return err
+		}
 	}
 
 	id, err := store.GenerateID()
@@ -86,7 +91,28 @@ func runNodeAdd(_ context.Context, nctx engine.NativeContext) error {
 		return err
 	}
 	green(nctx.Stdout, "added node %s\n", id)
+	cyan(nctx.Stdout, "%s\n", name)
+	fmt.Fprintln(nctx.Stdout, "note: restart the volok service so the relay picks up this node")
 	return nil
+}
+
+// linkName derives a display name from the VLESS URL fragment, falling
+// back to host:port when the link carries no fragment.
+func linkName(link string) (string, error) {
+	u, err := url.Parse(link)
+	if err != nil {
+		return "", fmt.Errorf("invalid vless url: %w", err)
+	}
+	if u.Fragment != "" {
+		name, err := url.PathUnescape(u.Fragment)
+		if err == nil && name != "" {
+			return name, nil
+		}
+	}
+	if u.Host == "" {
+		return "", fmt.Errorf("invalid vless url: missing host")
+	}
+	return u.Host, nil
 }
 
 func runNodeRename(_ context.Context, nctx engine.NativeContext) error {

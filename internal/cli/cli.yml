@@ -53,11 +53,11 @@ node:
     args:
       - "id:str"
   add:
-    desc: Add an existing direct link
+    desc: Add an existing direct link (name defaults to the link's #fragment)
     native: true
     args:
-      - "name|n:str"
-      - "url|u:str"
+      - "url:str"
+      - "name|n:str?"
       - "url-stdin:bool?"
   rename:
     desc: Rename a node
