@@ -81,7 +81,7 @@ func proxyBody(cfg *store.Config) string {
 
 // allBody renders every enabled node twice: once as a direct link and once
 // as a relay link through the router proxy (when configured). Relay links
-// get a "-proxy" name suffix so clients can tell them apart.
+// get a "[proxy] " name prefix so clients can tell them apart.
 func allBody(cfg *store.Config) string {
 	var b strings.Builder
 	for _, n := range cfg.Nodes {
@@ -98,14 +98,14 @@ func allBody(cfg *store.Config) string {
 			slog.Error("building proxy link", "node", n.ID, "error", err)
 			continue
 		}
-		b.WriteString(renameLink(link, "-proxy"))
+		b.WriteString(prefixLink(link, "[proxy] "))
 		b.WriteString("\n")
 	}
 	return b.String()
 }
 
-// renameLink appends a suffix to the URL fragment name.
-func renameLink(raw, suffix string) string {
+// prefixLink prepends a prefix to the URL fragment name.
+func prefixLink(raw, prefix string) string {
 	base, frag, ok := strings.Cut(raw, "#")
 	if !ok {
 		return raw
@@ -114,7 +114,7 @@ func renameLink(raw, suffix string) string {
 	if err != nil {
 		return raw
 	}
-	return base + "#" + url.PathEscape(name+suffix)
+	return base + "#" + url.PathEscape(prefix+name)
 }
 
 // setSubscriptionHeaders adds metadata headers that mobile clients
