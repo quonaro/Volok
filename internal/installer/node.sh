@@ -410,7 +410,7 @@ check_port() {
 build_link() {
 	local ip="$1"
 	local params
-	params="security=reality&encryption=none&fp=${FINGERPRINT}&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}&flow=${FLOW}&type=tcp&headerType=none&sni=${SNI}"
+	params="security=reality&encryption=none&fp=${FINGERPRINT}&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}&spx=%2F&flow=${FLOW}&type=tcp&headerType=none&sni=${SNI}"
 	echo "vless://${UUID}@${ip}:${PORT}?${params}#$(url_encode "$NAME")"
 }
 
