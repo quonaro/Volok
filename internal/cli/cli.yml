@@ -89,8 +89,8 @@ proxy:
     desc: Generate REALITY identity for the router proxy
     native: true
     args:
-      - "port:p:int?443"
-      - "sni:s:str?www.cloudflare.com"
+      - "port|p:int?"
+      - "sni|s:str?"
   show:
     desc: Show proxy identity and status
     native: true

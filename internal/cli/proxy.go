@@ -12,9 +12,14 @@ import (
 )
 
 func runProxyInit(_ context.Context, nctx engine.NativeContext) error {
-	port, err := strconv.Atoi(nctx.Args["port"])
-	if err != nil || port < 1 || port > 65535 {
-		return fmt.Errorf("invalid port %q", nctx.Args["port"])
+	portStr := nctx.Args["port"]
+	port := 443
+	if portStr != "" {
+		var err error
+		port, err = strconv.Atoi(portStr)
+		if err != nil || port < 1 || port > 65535 {
+			return fmt.Errorf("invalid port %q", portStr)
+		}
 	}
 	sni := nctx.Args["sni"]
 	if sni == "" {
