@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 
+	"volok/internal/geo"
 	"volok/internal/installer"
 	"volok/internal/store"
 	"volok/internal/vless"
@@ -98,7 +99,12 @@ func (s *Server) handleRegisterNode(w http.ResponseWriter, r *http.Request) {
 	_, err = s.store.Update(func(c *store.Config) error {
 		n := findNode(c, id)
 		if n == nil {
-			c.Nodes = append(c.Nodes, store.Node{ID: id, Name: req.Name, URL: req.URL, Enabled: true})
+			names := make([]string, 0, len(c.Nodes))
+			for _, o := range c.Nodes {
+				names = append(names, o.Name)
+			}
+			name := geo.EnsureUniqueSuffix(req.Name, geo.SuffixSet(names))
+			c.Nodes = append(c.Nodes, store.Node{ID: id, Name: name, URL: req.URL, Enabled: true})
 			return nil
 		}
 		if n.URL != req.URL {

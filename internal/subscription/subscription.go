@@ -6,16 +6,19 @@ import (
 	"strings"
 
 	"volok/internal/store"
+	"volok/internal/vless"
 )
 
-// Build renders one direct VLESS link per line for enabled nodes.
+// Build renders one direct VLESS link per line for enabled nodes. The stored
+// node name is written into the URL fragment so clients display the library
+// label rather than whatever fragment the original link carried.
 func Build(cfg *store.Config) string {
 	var b strings.Builder
 	for _, n := range cfg.Nodes {
 		if !n.Enabled {
 			continue
 		}
-		b.WriteString(n.URL)
+		b.WriteString(vless.WithName(n.URL, n.Name))
 		b.WriteString("\n")
 	}
 	return b.String()

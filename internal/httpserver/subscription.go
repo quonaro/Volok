@@ -11,6 +11,7 @@ import (
 	"volok/internal/proxy"
 	"volok/internal/store"
 	"volok/internal/subscription"
+	"volok/internal/vless"
 )
 
 const strTrue = "true"
@@ -88,7 +89,7 @@ func allBody(cfg *store.Config) string {
 		if !n.Enabled {
 			continue
 		}
-		b.WriteString(n.URL)
+		b.WriteString(vless.WithName(n.URL, n.Name))
 		b.WriteString("\n")
 		if cfg.Proxy == nil {
 			continue

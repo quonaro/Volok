@@ -276,8 +276,10 @@ func ProxyLink(cfg *store.Config, n store.Node) (string, error) {
 	params.Set("sni", p.SNI)
 
 	name := n.Name
-	if u, err := url.Parse(n.URL); err == nil && u.Fragment != "" {
-		name = u.Fragment
+	if name == "" {
+		if u, err := url.Parse(n.URL); err == nil {
+			name = u.Fragment
+		}
 	}
 
 	return fmt.Sprintf("vless://%s@%s:%s?%s#%s",

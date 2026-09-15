@@ -3,7 +3,7 @@ init:
   color: green
   native: true
   args:
-    - "public-url|p:str"
+  - "public-url|p:str"
 
 serve:
   desc: Run the HTTP server in foreground
@@ -20,7 +20,7 @@ token:
     desc: Rotate the admin token
     native: true
     args:
-      - "yes|y:bool?"
+    - "yes|y:bool?"
 
 user:
   desc: Reader subscription tokens
@@ -32,14 +32,14 @@ user:
     desc: List reader tokens
     native: true
     args:
-      - "show-tokens:bool?"
+    - "show-tokens:bool?"
   remove:
     desc: Remove a reader token
     native: true
     args:
-      - "token:str?"
-      - "token-stdin:bool?"
-      - "yes|y:bool?"
+    - "token:str?"
+    - "token-stdin:bool?"
+    - "yes|y:bool?"
 
 node:
   desc: Node library commands
@@ -51,54 +51,36 @@ node:
     desc: Show one node with its link
     native: true
     args:
-      - "id:str"
+    - "id:str"
   add:
-    desc: Add an existing direct link (name defaults to the link's #fragment)
+    desc: Add an existing direct link (name auto-detected from host IP)
     native: true
     args:
-      - "url:str"
-      - "name|n:str?"
-      - "url-stdin:bool?"
+    - "url:str"
+    - "name|n:str?"
+    - "url-stdin:bool?"
   rename:
     desc: Rename a node
     native: true
     args:
-      - "id:str"
-      - "name:str"
+    - "id:str"
+    - "name:str"
   enable:
     desc: Enable a node in the subscription
     native: true
     args:
-      - "id:str"
+    - "id:str"
   disable:
     desc: Disable a node in the subscription
     native: true
     args:
-      - "id:str"
+    - "id:str"
   remove:
     desc: Remove a node from the library
     native: true
     args:
-      - "id:str"
-      - "yes|y:bool?"
-
-proxy:
-  desc: Router relay proxy commands
-  color: magenta
-  init:
-    desc: Generate REALITY identity for the router proxy
+    - "id:str"
+    - "yes|y:bool?"
+  normalize:
+    desc: Rebuild node names in <flag> <Country>#<NNNN> format via geo-IP
     native: true
-    args:
-      - "port|p:int?"
-      - "sni|s:str?"
-  show:
-    desc: Show proxy identity and status
-    native: true
-  config:
-    desc: Print sing-box config for the router proxy
-    native: true
-  remove:
-    desc: Remove the proxy identity
-    native: true
-    args:
-      - "yes|y:bool?"

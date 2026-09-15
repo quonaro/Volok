@@ -3,11 +3,13 @@ package cli
 import (
 	"context"
 	"fmt"
-	"net/url"
+	"net"
 	"os"
+	"time"
 
 	"github.com/quonaro/lota/engine"
 
+	"volok/internal/geo"
 	"volok/internal/store"
 	"volok/internal/vless"
 )
@@ -57,7 +59,7 @@ func runNodeShow(_ context.Context, nctx engine.NativeContext) error {
 	return nil
 }
 
-func runNodeAdd(_ context.Context, nctx engine.NativeContext) error {
+func runNodeAdd(ctx context.Context, nctx engine.NativeContext) error {
 	name := nctx.Args["name"]
 	link := nctx.Args["url"]
 	if nctx.Args["url-stdin"] == strTrue {
@@ -70,9 +72,18 @@ func runNodeAdd(_ context.Context, nctx engine.NativeContext) error {
 	if link == "" {
 		return fmt.Errorf("--url or --url-stdin is required")
 	}
+	s := store.Open(filePath())
 	if name == "" {
+		var used map[int]bool
+		if cfg, err := s.Read(); err == nil {
+			names := make([]string, 0, len(cfg.Nodes))
+			for _, n := range cfg.Nodes {
+				names = append(names, n.Name)
+			}
+			used = geo.SuffixSet(names)
+		}
 		var err error
-		name, err = linkName(link)
+		name, err = detectNodeName(ctx, link, used)
 		if err != nil {
 			return err
 		}
@@ -82,7 +93,6 @@ func runNodeAdd(_ context.Context, nctx engine.NativeContext) error {
 	if err != nil {
 		return err
 	}
-	s := store.Open(filePath())
 	_, err = s.Update(func(c *store.Config) error {
 		c.Nodes = append(c.Nodes, store.Node{ID: id, Name: name, URL: link, Enabled: true})
 		return nil
@@ -96,23 +106,32 @@ func runNodeAdd(_ context.Context, nctx engine.NativeContext) error {
 	return nil
 }
 
-// linkName derives a display name from the VLESS URL fragment, falling
-// back to host:port when the link carries no fragment.
-func linkName(link string) (string, error) {
-	u, err := url.Parse(link)
+// detectNodeName derives a display name from the VLESS link by resolving the
+// host's country via geo APIs, matching the node.sh installer format:
+// "<flag> <Country>#<4 digits>". Falls back to "VPS#<4 digits>" when the
+// country cannot be determined. The suffix is unique across used.
+func detectNodeName(ctx context.Context, link string, used map[int]bool) (string, error) {
+	p, err := vless.Parse(link)
 	if err != nil {
-		return "", fmt.Errorf("invalid vless url: %w", err)
+		return "", err
 	}
-	if u.Fragment != "" {
-		name, err := url.PathUnescape(u.Fragment)
-		if err == nil && name != "" {
-			return name, nil
+	suffix := geo.UniqueSuffix(used)
+	ip := p.Host
+	if net.ParseIP(ip) == nil {
+		resolver := net.DefaultResolver
+		ips, err := resolver.LookupIPAddr(ctx, ip)
+		if err != nil || len(ips) == 0 {
+			return geo.NodeName(geo.Result{}, suffix), nil
 		}
+		ip = ips[0].IP.String()
 	}
-	if u.Host == "" {
-		return "", fmt.Errorf("invalid vless url: missing host")
+	geoCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	result, err := geo.Detect(geoCtx, ip)
+	if err != nil {
+		return geo.NodeName(geo.Result{}, suffix), nil
 	}
-	return u.Host, nil
+	return geo.NodeName(result, suffix), nil
 }
 
 func runNodeRename(_ context.Context, nctx engine.NativeContext) error {
@@ -122,7 +141,13 @@ func runNodeRename(_ context.Context, nctx engine.NativeContext) error {
 		if n == nil {
 			return fmt.Errorf("node %q not found", nctx.Args["id"])
 		}
-		n.Name = nctx.Args["name"]
+		names := make([]string, 0, len(c.Nodes))
+		for _, o := range c.Nodes {
+			if o.ID != n.ID {
+				names = append(names, o.Name)
+			}
+		}
+		n.Name = geo.EnsureUniqueSuffix(nctx.Args["name"], geo.SuffixSet(names))
 		return nil
 	})
 	if err != nil {
@@ -199,4 +224,58 @@ func findNode(c *store.Config, id string) *store.Node {
 		}
 	}
 	return nil
+}
+
+// runNodeNormalize rebuilds every node name that is not already in the
+// canonical "<flag> <Country>#<NNNN>" format by resolving the host's country
+// via geo-IP. Suffixes are kept unique across all nodes.
+func runNodeNormalize(ctx context.Context, nctx engine.NativeContext) error {
+	s := store.Open(filePath())
+	cfg, err := s.Read()
+	if err != nil {
+		return err
+	}
+	used := geo.SuffixSet(nodeNames(cfg.Nodes))
+	updates := make(map[string]string, len(cfg.Nodes))
+	for _, n := range cfg.Nodes {
+		if geo.IsCanonical(n.Name) {
+			continue
+		}
+		name, err := detectNodeName(ctx, n.URL, used)
+		if err != nil {
+			return fmt.Errorf("node %s: %w", n.ID, err)
+		}
+		if v, ok := geo.Suffix(name); ok {
+			used[v] = true
+		}
+		updates[n.ID] = name
+	}
+	if len(updates) == 0 {
+		green(nctx.Stdout, "all node names already normalized\n")
+		return nil
+	}
+	_, err = s.Update(func(c *store.Config) error {
+		for i := range c.Nodes {
+			if name, ok := updates[c.Nodes[i].ID]; ok {
+				c.Nodes[i].Name = name
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	for id, name := range updates {
+		green(nctx.Stdout, "normalized %s\n", id)
+		cyan(nctx.Stdout, "  %s\n", name)
+	}
+	return nil
+}
+
+func nodeNames(nodes []store.Node) []string {
+	names := make([]string, 0, len(nodes))
+	for _, n := range nodes {
+		names = append(names, n.Name)
+	}
+	return names
 }

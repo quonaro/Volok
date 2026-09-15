@@ -46,6 +46,27 @@ func runServe(_ context.Context, nctx engine.NativeContext) error {
 		return err
 	}
 
+	// Auto-create the relay proxy identity on first serve so the router
+	// relay starts without a separate setup step.
+	if cfg.Proxy == nil {
+		_, err = s.Update(func(c *store.Config) error {
+			p, perr := store.NewProxy(8443, "www.cloudflare.com")
+			if perr != nil {
+				return perr
+			}
+			c.Proxy = p
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("creating proxy identity: %w", err)
+		}
+		cfg, err = s.Read()
+		if err != nil {
+			return err
+		}
+		green(nctx.Stdout, "proxy identity auto-created on :%d\n", cfg.Proxy.Port)
+	}
+
 	addr := cfg.Listen
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
