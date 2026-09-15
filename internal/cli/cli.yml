@@ -81,3 +81,24 @@ node:
     args:
       - "id:str"
       - "yes|y:bool?"
+
+proxy:
+  desc: Router relay proxy commands
+  color: magenta
+  init:
+    desc: Generate REALITY identity for the router proxy
+    native: true
+    args:
+      - "port:p:int?443"
+      - "sni:s:str?www.cloudflare.com"
+  show:
+    desc: Show proxy identity and status
+    native: true
+  config:
+    desc: Print sing-box config for the router proxy
+    native: true
+  remove:
+    desc: Remove the proxy identity
+    native: true
+    args:
+      - "yes|y:bool?"

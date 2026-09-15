@@ -22,6 +22,18 @@ type Config struct {
 	Listen        string   `json:"listen"`
 	PublicURL     string   `json:"public_url"`
 	Nodes         []Node   `json:"nodes"`
+	Proxy         *Proxy   `json:"proxy,omitempty"`
+}
+
+// Proxy holds the REALITY identity for the router's sing-box inbound.
+// When present, the subscription can return relay links via ?proxy=true.
+type Proxy struct {
+	UUID       string `json:"uuid"`
+	PrivateKey string `json:"private_key"`
+	PublicKey  string `json:"public_key"`
+	ShortID    string `json:"short_id"`
+	Port       int    `json:"port"`
+	SNI        string `json:"sni"`
 }
 
 // Node is one direct VLESS endpoint stored in the library.

@@ -62,6 +62,10 @@ func BuildCLI(stdout, stderr io.Writer) (*engine.App, error) {
 		"node.enable":  runNodeEnable,
 		"node.disable": runNodeDisable,
 		"node.remove":  runNodeRemove,
+		"proxy.init":   runProxyInit,
+		"proxy.show":   runProxyShow,
+		"proxy.config": runProxyConfig,
+		"proxy.remove": runProxyRemove,
 	}
 	for path, fn := range register {
 		builder.RegisterNative(path, fn)

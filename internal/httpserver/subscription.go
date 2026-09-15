@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"volok/internal/proxy"
 	"volok/internal/store"
 	"volok/internal/subscription"
 )
@@ -29,7 +30,8 @@ func (s *Server) handleSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body := subscription.BuildWith(cfg, subOptions(r))
+	opts := subOptions(r)
+	body := buildBody(cfg, r, opts)
 	if r.URL.Query().Get("format") == "base64" {
 		body = subscription.EncodeBase64(body)
 	}
@@ -38,6 +40,37 @@ func (s *Server) handleSubscription(w http.ResponseWriter, r *http.Request) {
 	noStoreHeaders(w)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(body))
+}
+
+// buildBody renders the subscription body, switching to proxy relay links
+// when ?proxy=true is requested and a proxy identity is configured.
+func buildBody(cfg *store.Config, r *http.Request, opts subscription.Options) string {
+	if r.URL.Query().Get("proxy") == "true" && cfg.Proxy != nil {
+		return proxyBody(cfg, opts)
+	}
+	return subscription.BuildWith(cfg, opts)
+}
+
+// proxyBody renders VLESS links pointing at the router's proxy inbound
+// instead of the direct VPS endpoints.
+func proxyBody(cfg *store.Config, opts subscription.Options) string {
+	var b []byte
+	for _, n := range cfg.Nodes {
+		if !n.Enabled {
+			continue
+		}
+		link, err := proxy.ProxyLink(cfg, n, struct{ NoVision, XHTTP bool }{
+			NoVision: opts.NoVision,
+			XHTTP:    opts.XHTTP,
+		})
+		if err != nil {
+			slog.Error("building proxy link", "node", n.ID, "error", err)
+			continue
+		}
+		b = append(b, []byte(link)...)
+		b = append(b, '\n')
+	}
+	return string(b)
 }
 
 // setSubscriptionHeaders adds metadata headers that mobile clients
