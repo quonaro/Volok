@@ -323,7 +323,10 @@ generate_config() {
 					port: $port,
 					protocol: "vless",
 					settings: {
-						clients: [{ id: $uuid, flow: $flow }],
+						clients: [
+							{ id: $uuid, flow: $flow },
+							{ id: $uuid }
+						],
 						decryption: "none"
 					},
 					streamSettings: {
