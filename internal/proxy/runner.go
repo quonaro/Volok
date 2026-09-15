@@ -13,6 +13,7 @@ import (
 	"strconv"
 
 	singbox "github.com/sagernet/sing-box"
+	"github.com/sagernet/sing-box/include"
 	"github.com/sagernet/sing-box/option"
 
 	"volok/internal/store"
@@ -48,7 +49,7 @@ func (r *Runner) Start(ctx context.Context, cfg *store.Config) error {
 
 	instance, err := singbox.New(singbox.Options{
 		Options: opts,
-		Context: ctx,
+		Context: include.Context(ctx),
 	})
 	if err != nil {
 		return fmt.Errorf("creating sing-box instance: %w", err)

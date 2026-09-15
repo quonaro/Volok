@@ -62,11 +62,16 @@ func runServe(_ context.Context, nctx engine.NativeContext) error {
 	go func() { serveErr <- srv.Serve(ln) }()
 
 	// Start the embedded sing-box proxy when a proxy identity is configured.
+	// A proxy failure is logged but does not stop the HTTP server.
 	var proxyErr chan error
 	if cfg.Proxy != nil {
 		proxyErr = make(chan error, 1)
 		runner := &proxy.Runner{}
-		go func() { proxyErr <- runner.Start(ctx, cfg) }()
+		go func() {
+			if err := runner.Start(ctx, cfg); err != nil {
+				proxyErr <- err
+			}
+		}()
 		green(nctx.Stdout, "proxy relay on :%d\n", cfg.Proxy.Port)
 	}
 
